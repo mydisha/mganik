@@ -28,6 +28,7 @@ var allModels = []tabler{
 	model.TerritoryRegion{}, model.PartnerTerritory{}, model.PriceList{}, model.PriceListItem{},
 	model.User{}, model.Session{}, model.Role{}, model.Permission{}, model.RolePermission{},
 	model.UserRole{}, model.UserRoleLocation{}, model.Consumer{},
+	model.ConsumerSession{}, model.OTPChallenge{},
 	model.CodeBatch{}, model.Batch{}, model.SerialUnitStatus{}, model.LifecycleTransition{},
 	model.SerialUnit{}, model.UnitEvent{}, model.Shipment{}, model.ShipmentItem{},
 	model.MovementType{}, model.InventoryBalance{}, model.InventoryMovement{}, model.StockPolicy{},

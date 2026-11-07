@@ -36,6 +36,315 @@ paths:
                 $ref: "#/components/schemas/Problem"
 
   # ==== [iam] path di bawah ini ====
+  # Request ber-cookie dengan metode POST/PUT/PATCH/DELETE wajib
+  # Content-Type: application/json dan Origin (bila ada) sama dengan host atau
+  # terdaftar di ALLOWED_ORIGINS (403 csrf_rejected / 415 unsupported_media_type).
+  /api/v1/auth/login:
+    post:
+      operationId: login
+      summary: Login staff dengan email + password
+      description: >
+        Sukses memasang cookie `__Host-session` (HttpOnly, Secure, SameSite=Lax,
+        idle 8 jam, absolut 12 jam) dan mengembalikan profil seperti /auth/me.
+        Gagal memakai pesan generik yang sama untuk email tidak dikenal maupun
+        password salah. Percobaan dibatasi per email (5) dan per IP (20) dalam
+        15 menit; jatah dipesan sebelum password diverifikasi, jadi request
+        paralel tidak bisa melewatinya. Login sukses tidak memakan jatah IP.
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login berhasil
+          headers:
+            Set-Cookie:
+              description: "__Host-session=<token>; Path=/; Max-Age=43200; HttpOnly; Secure; SameSite=Lax"
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "400":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: invalid_credentials (email atau password salah)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: account_disabled, atau csrf_rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          description: too_many_attempts; detail memuat menit tunggu
+          headers:
+            Retry-After:
+              description: Detik sampai boleh mencoba lagi
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: server_busy (verifikasi password bersamaan penuh); coba lagi
+          headers:
+            Retry-After:
+              description: Detik sampai boleh mencoba lagi
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      summary: Mencabut sesi staff dan menghapus cookie
+      description: Idempotent; selalu 204 walau sesi sudah kedaluwarsa atau tidak ada.
+      tags: [auth]
+      security:
+        - sessionCookie: []
+        - {}
+      responses:
+        "204":
+          description: Sesi dicabut (kalau ada) dan cookie dihapus
+        "403":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/auth/me:
+    get:
+      operationId: getMe
+      summary: Profil staff yang sedang login, role, permission, dan scope lokasi
+      tags: [auth]
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Profil
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "401":
+          description: unauthenticated atau session_expired
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Pemanggil bukan staff (mis. token device)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/public/otp/request:
+    post:
+      operationId: requestConsumerOtp
+      summary: Minta kode OTP login konsumen (mock)
+      description: >
+        Nomor dinormalkan ke E.164 Indonesia (+628...). Prototype memakai kode
+        OTP tetap (OTP_MOCK_CODE) yang tidak pernah dikembalikan di respons;
+        dimatikan (503 otp_unavailable) di production tanpa izin demo. Dibatasi
+        5 permintaan per nomor dan 20 per IP dalam 15 menit.
+      tags: [consumer]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtpRequest"
+      responses:
+        "202":
+          description: Kode dikirim (respons sama untuk nomor baru maupun lama)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtpRequestResponse"
+        "403":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          description: too_many_attempts; detail memuat menit tunggu
+          headers:
+            Retry-After:
+              description: Detik sampai boleh mencoba lagi
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/public/otp/verify:
+    post:
+      operationId: verifyConsumerOtp
+      summary: Verifikasi OTP dan buat sesi konsumen
+      description: >
+        Sukses memasang cookie `__Host-consumer` (idle 24 jam, absolut 7 hari).
+        Maksimal 5 percobaan per kode; setelah itu minta kode baru. Cookie
+        konsumen lama (bila ada) dicabut dan diganti.
+      tags: [consumer]
+      security:
+        - consumerCookie: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtpVerifyRequest"
+      responses:
+        "200":
+          description: Login konsumen berhasil
+          headers:
+            Set-Cookie:
+              description: "__Host-consumer=<token>; Path=/; Max-Age=604800; HttpOnly; Secure; SameSite=Lax"
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsumerMeResponse"
+        "401":
+          description: otp_invalid (kode salah atau kedaluwarsa)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: consumer_blocked atau csrf_rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          description: too_many_attempts; detail memuat menit tunggu
+          headers:
+            Retry-After:
+              description: Detik sampai boleh mencoba lagi
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/public/consumer/me:
+    get:
+      operationId: getConsumerMe
+      summary: Konsumen yang sedang login (nomor disamarkan)
+      description: Butuh cookie `__Host-consumer` dari /public/otp/verify.
+      tags: [consumer]
+      security:
+        - consumerCookie: []
+      responses:
+        "200":
+          description: Profil konsumen
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsumerMeResponse"
+        "401":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/public/consumer/logout:
+    post:
+      operationId: logoutConsumer
+      summary: Mencabut sesi konsumen dan menghapus cookie
+      description: Idempotent; memakai cookie `__Host-consumer` bila ada.
+      tags: [consumer]
+      security:
+        - consumerCookie: []
+        - {}
+      responses:
+        "204":
+          description: Sesi dicabut (kalau ada) dan cookie dihapus
+        "403":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
   # ==== [/iam] ====
 
   # ==== [serialization] produksi, agregasi, shipment, verifikasi, klaim ====
@@ -56,11 +365,137 @@ components:
       type: apiKey
       in: cookie
       name: __Host-session
+    consumerCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-consumer
     deviceToken:
       type: http
       scheme: bearer
   schemas:
     # ==== [iam] schema di bawah ini ====
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          maxLength: 254
+        password:
+          type: string
+          format: password
+          maxLength: 1024
+    LocationRef:
+      type: object
+      required: [id, code, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+    MeUser:
+      type: object
+      required: [id, email, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        name:
+          type: string
+    MeRole:
+      type: object
+      required: [code, name, scope_mode, locations]
+      properties:
+        code:
+          type: string
+          description: Kode role, mis. ADMIN, CASHIER
+        name:
+          type: string
+        scope_mode:
+          $ref: "#/components/schemas/ScopeMode"
+        locations:
+          type: array
+          description: Hanya terisi untuk scope SELECTED
+          items:
+            $ref: "#/components/schemas/LocationRef"
+    ScopeMode:
+      type: string
+      enum: [ALL, SELECTED]
+    MeScope:
+      type: object
+      description: >
+        Scope lokasi efektif. ALL = semua lokasi (locations kosong). SELECTED =
+        hanya locations; daftar kosong berarti tidak ada akses lokasi.
+      required: [mode, locations]
+      properties:
+        mode:
+          $ref: "#/components/schemas/ScopeMode"
+        locations:
+          type: array
+          items:
+            $ref: "#/components/schemas/LocationRef"
+    MeResponse:
+      type: object
+      required: [user, roles, permissions, scope]
+      properties:
+        user:
+          $ref: "#/components/schemas/MeUser"
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/MeRole"
+        permissions:
+          type: array
+          description: Gabungan permission semua role, urut
+          items:
+            type: string
+        scope:
+          $ref: "#/components/schemas/MeScope"
+    OtpRequest:
+      type: object
+      additionalProperties: false
+      required: [phone]
+      properties:
+        phone:
+          type: string
+          maxLength: 32
+          description: Nomor seluler Indonesia, mis. 0812xxxxxxxx atau +62812xxxxxxxx
+    OtpRequestResponse:
+      type: object
+      required: [expires_at, expires_in_seconds]
+      properties:
+        expires_at:
+          type: string
+          format: date-time
+        expires_in_seconds:
+          type: integer
+    OtpVerifyRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, code]
+      properties:
+        phone:
+          type: string
+          maxLength: 32
+        code:
+          type: string
+          pattern: "^[0-9]{6}$"
+    ConsumerMeResponse:
+      type: object
+      required: [id, phone_masked]
+      properties:
+        id:
+          type: string
+          format: uuid
+        phone_masked:
+          type: string
+          description: Nomor E.164 yang disamarkan, mis. +62812*****890
     # ==== [/iam] ====
 
     # ==== [serialization] ====
