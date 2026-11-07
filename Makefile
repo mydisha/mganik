@@ -15,7 +15,11 @@ DEV_DATABASE_URL ?= postgres://mganik:$(POSTGRES_PASSWORD)@localhost:$(DB_PORT)/
 # terverifikasi oleh `make api` di volume yang sama, dan sebaliknya.
 CLAIM_PEPPER ?= demo-claim-pepper-ganti-sebelum-dipakai-sungguhan
 SEED_DEMO_PASSWORD ?= mganik-demo-2026
-export CLAIM_PEPPER SEED_DEMO_PASSWORD
+# Kunci HMAC webhook pembayaran mock & impor marketplace (konstanta Go
+# config.DemoWebhookSecret). RUN_WORKER=false mematikan sweeper/outbox di `make api`.
+WEBHOOK_SECRET ?= demo-webhook-secret-ganti-sebelum-dipakai-sungguhan
+RUN_WORKER ?= true
+export CLAIM_PEPPER SEED_DEMO_PASSWORD WEBHOOK_SECRET RUN_WORKER
 
 .DEFAULT_GOAL := help
 .PHONY: help up down logs ps clean db migrate seed demo-data api web test test-api test-web lint gen hooks

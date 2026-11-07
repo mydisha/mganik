@@ -29,6 +29,12 @@ x-api-env: &api-env
   # production kecuali izin ini true; api dan migrate menulis WARN saat start.
   # Set false (dan isi secret sendiri) untuk deployment sungguhan.
   SEED_DEMO_ALLOW_PRODUCTION: ${SEED_DEMO_ALLOW_PRODUCTION:-true}
+  # Kunci HMAC signature webhook pembayaran mock dan impor order marketplace
+  # (min. 32 byte di production). Default demo publik; aturannya sama dengan
+  # CLAIM_PEPPER.
+  WEBHOOK_SECRET: ${WEBHOOK_SECRET:-demo-webhook-secret-ganti-sebelum-dipakai-sungguhan}
+  # Sweeper reservasi kedaluwarsa dan dispatcher outbox berjalan di proses api.
+  RUN_WORKER: ${RUN_WORKER:-true}
 
 services:
   db:

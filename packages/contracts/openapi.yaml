@@ -42,6 +42,301 @@ paths:
   # ==== [/serialization] ====
 
   # ==== [inventory] stok, order, pembayaran ====
+  # Route staff butuh sesi + permission; lokasi di luar scope principal = 403.
+  # POST pembuat data memakai header Idempotency-Key (1-255 karakter ASCII).
+  # Teks bebas (reason, note, external_ref, sku, provider_ref, ...) dengan
+  # karakter kontrol selain \n dan \t ditolak 422 invalid_characters.
+  # Webhook pembayaran & impor marketplace tanpa sesi, ditandatangani HMAC:
+  #   X-Mganik-Timestamp: <unix detik>  (toleransi ±5 menit)
+  #   X-Mganik-Signature: v1=<hex HMAC-SHA256(WEBHOOK_SECRET, timestamp + "." + body)>
+  /api/v1/inventory/balances:
+    get:
+      operationId: listInventoryBalances
+      summary: Saldo stok per (lokasi, produk) dengan ATP online
+      description: >
+        Pagination keyset (location_id, product_id) lewat cursor opaque.
+        Principal ber-scope SELECTED hanya melihat lokasinya. online_atp =
+        available − online_buffer_qty, dan 0 kalau POS lokasi OFFLINE.
+        Permission inventory.read.
+      tags: [inventory]
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - { name: location_id, in: query, schema: { type: string, format: uuid } }
+        - { name: product_id, in: query, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 512 } }
+      responses:
+        "200":
+          description: Satu halaman saldo
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InventoryBalancePage" }
+        # Anchor YAML dipakai ulang di seluruh bagian [inventory] (marker hanya
+        # mengizinkan path & schema, bukan components.responses/parameters).
+        "401": &invProblem
+          description: Error domain (problem+json, lihat field code)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "403": *invProblem
+        "422": *invProblem
+  /api/v1/inventory/adjustments:
+    post:
+      operationId: createInventoryAdjustment
+      summary: Stock opname (ADJUST_COUNT ±) dengan alasan wajib, diaudit
+      description: >
+        Idempotency-Key yang sama dengan isi sama = 200 duplicate (tanpa mutasi
+        baru); isi berbeda = 422 idempotency_key_reused. Mengurangi melebihi
+        available = 409 insufficient_stock. Permission inventory.adjust.
+      tags: [inventory]
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - &invIdemKey
+          name: Idempotency-Key
+          in: header
+          required: true
+          description: Kunci idempotensi dari klien (1-255 karakter ASCII terlihat)
+          schema: { type: string, minLength: 1, maxLength: 255 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InventoryAdjustmentRequest" }
+      responses:
+        "201":
+          description: Mutasi dicatat
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InventoryStockChangeResponse" }
+        "200":
+          description: Replay Idempotency-Key (duplicate=true)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InventoryStockChangeResponse" }
+        "400": *invProblem
+        "401": *invProblem
+        "403": *invProblem
+        "409": *invProblem
+        "422": *invProblem
+  /api/v1/inventory/quarantine:
+    post:
+      operationId: moveInventoryQuarantine
+      summary: Pindah stok ke karantina (IN) atau rilis (OUT), diaudit
+      description: Permission inventory.quarantine. Semantik Idempotency-Key sama dengan adjustment.
+      tags: [inventory]
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - *invIdemKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InventoryQuarantineRequest" }
+      responses:
+        "201":
+          description: Mutasi dicatat
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InventoryStockChangeResponse" }
+        "200":
+          description: Replay Idempotency-Key (duplicate=true)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InventoryStockChangeResponse" }
+        "400": *invProblem
+        "401": *invProblem
+        "403": *invProblem
+        "409": *invProblem
+        "422": *invProblem
+  /api/v1/orders:
+    post:
+      operationId: createOrder
+      summary: Buat order D2C dan pesan stok (PENDING_PAYMENT)
+      description: >
+        Harga dari price list channel. Seluruh line dipesan di SATU lokasi
+        (gudang pusat dulu, lalu lokasi lain yang online_fulfillment_enabled),
+        all-or-nothing, dengan batas bayar RESERVATION_TTL. Idempotency-Key
+        wajib: replay = respons identik + header Idempotent-Replayed: true,
+        isi berbeda = 422 idempotency_key_reused, masih diproses = 409
+        idempotency_in_progress. Stok tidak cukup = 409 out_of_stock dengan
+        errors[] per line (field lines[i].qty, code insufficient_stock atau
+        not_at_single_location). Permission order.create.
+      tags: [orders]
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - *invIdemKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderCreateRequest" }
+      responses:
+        "201":
+          description: Order dibuat (atau replay)
+          headers:
+            Idempotent-Replayed:
+              description: "true kalau respons adalah replay"
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400": *invProblem
+        "401": *invProblem
+        "403": *invProblem
+        "409": *invProblem
+        "422": *invProblem
+  /api/v1/orders/{id}:
+    get:
+      operationId: getOrder
+      summary: Order lengkap (line, reservasi, riwayat status, pembayaran)
+      description: Permission order.read; principal SELECTED hanya order dari lokasinya.
+      tags: [orders]
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - &invOrderID
+          name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Order
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "401": *invProblem
+        "403": *invProblem
+        "404": *invProblem
+  /api/v1/orders/{id}/cancel:
+    post:
+      operationId: cancelOrder
+      summary: Batalkan order dan lepas reservasinya
+      description: >
+        Dari PENDING_PAYMENT, PAID, atau NEEDS_ACTION. Order yang sudah dibayar
+        ditandai metadata.refund_required. Membatalkan order CANCELLED = 200
+        apa adanya. Permission order.cancel.
+      tags: [orders]
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - *invOrderID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderCancelRequest" }
+      responses:
+        "200":
+          description: Order sesudah dibatalkan
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "401": *invProblem
+        "403": *invProblem
+        "404": *invProblem
+        "409": *invProblem
+        "422": *invProblem
+  /api/v1/orders/{id}/fulfill:
+    post:
+      operationId: fulfillOrder
+      summary: Penuhi order PAID (COMMIT_SALE, PAID → FULFILLING → SHIPPED)
+      description: >
+        Body opsional: serial unit per line dicatat di order_line_serials (satu
+        unit hanya terjual sekali = 409 serial_already_sold). Order SHIPPED =
+        200 apa adanya. Permission order.fulfill + semua lokasi reservasi di scope.
+      tags: [orders]
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - *invOrderID
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderFulfillRequest" }
+      responses:
+        "200":
+          description: Order sesudah dikirim
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "401": *invProblem
+        "403": *invProblem
+        "404": *invProblem
+        "409": *invProblem
+        "422": *invProblem
+  /api/v1/webhooks/payments/mock:
+    post:
+      operationId: paymentWebhookMock
+      summary: Webhook pembayaran mock (signature HMAC, idempotent per provider_ref)
+      description: >
+        Nominal dan mata uang harus sama dengan total order. PENDING_PAYMENT →
+        PAID. Bayar telat (EXPIRED): stok dipesan ulang → PAID, atau
+        NEEDS_ACTION + refund kalau stok habis. Kiriman ulang = 200
+        ALREADY_PROCESSED.
+      tags: [payments]
+      security: []
+      parameters:
+        - &invWebhookTimestamp
+          name: X-Mganik-Timestamp
+          in: header
+          required: true
+          description: Unix detik; harus dalam ±5 menit dari jam server (401 stale_timestamp)
+          schema: { type: string, pattern: "^[0-9]+$" }
+        - &invWebhookSignature
+          name: X-Mganik-Signature
+          in: header
+          required: true
+          description: v1=<hex HMAC-SHA256(WEBHOOK_SECRET, timestamp + "." + body)> (401 invalid_signature)
+          schema: { type: string, pattern: "^v1=[0-9a-f]{64}$" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PaymentWebhookRequest" }
+      responses:
+        "200":
+          description: Event diproses (atau duplikat)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentWebhookResponse" }
+        "401": *invProblem
+        "404": *invProblem
+        "409": *invProblem
+        "422": *invProblem
+        "503": *invProblem
+  /api/v1/channels/marketplace/orders:
+    post:
+      operationId: importMarketplaceOrder
+      summary: Impor order marketplace yang sudah dibayar (signature HMAC)
+      description: >
+        Dedupe per (channel_code, external_ref): impor ulang dengan isi sama =
+        200 duplicate dengan order yang sama; isi berbeda = 409
+        external_ref_conflict. Order langsung PAID; stok tidak cukup → order
+        tetap dibuat lalu NEEDS_ACTION (tidak ditolak).
+      tags: [orders]
+      security: []
+      parameters:
+        - *invWebhookTimestamp
+        - *invWebhookSignature
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MarketplaceOrderRequest" }
+      responses:
+        "201":
+          description: Order baru
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MarketplaceImportResponse" }
+        "200":
+          description: Duplikat (order yang sudah ada)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MarketplaceImportResponse" }
+        "401": *invProblem
+        "409": *invProblem
+        "422": *invProblem
+        "503": *invProblem
   # ==== [/inventory] ====
 
   # ==== [pos] ====
@@ -67,6 +362,278 @@ components:
     # ==== [/serialization] ====
 
     # ==== [inventory] ====
+    InventoryBalanceItem:
+      type: object
+      required: [location_id, location_code, location_name, location_type, sync_state, product_id, sku, product_name,
+        physical_qty, reserved_qty, quarantine_qty, available_qty, online_buffer_qty, online_atp, updated_at]
+      properties:
+        location_id: { type: string, format: uuid }
+        location_code: { type: string }
+        location_name: { type: string }
+        location_type: { type: string, description: "CENTRAL_WH, HUB, OWN_STORE, ..." }
+        sync_state: { type: string, enum: [NOT_TRACKED, ONLINE, OFFLINE] }
+        product_id: { type: string, format: uuid }
+        sku: { type: string }
+        product_name: { type: string }
+        physical_qty: { type: integer, format: int64 }
+        reserved_qty: { type: integer, format: int64 }
+        quarantine_qty: { type: integer, format: int64 }
+        available_qty: { type: integer, format: int64, description: physical − reserved − quarantine }
+        online_buffer_qty: { type: integer, format: int64 }
+        online_atp: { type: integer, format: int64, description: "Stok yang boleh dijanjikan ke online (0 kalau OFFLINE)" }
+        updated_at: { type: string, format: date-time }
+    InventoryBalancePage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/InventoryBalanceItem" }
+        next_cursor:
+          type: [string, "null"]
+          description: null = halaman terakhir
+    InventoryAdjustmentRequest:
+      type: object
+      additionalProperties: false
+      required: [location_id, product_id, qty_delta, reason]
+      properties:
+        location_id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        qty_delta: { type: integer, format: int64, minimum: -1000000, maximum: 1000000, description: "≠ 0; negatif = kurang" }
+        reason: { type: string, minLength: 3, maxLength: 500, description: "Wajib, 3-500 karakter (unicode)" }
+    InventoryQuarantineRequest:
+      type: object
+      additionalProperties: false
+      required: [location_id, product_id, qty, direction, reason]
+      properties:
+        location_id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        qty: { type: integer, format: int64, minimum: 1, maximum: 1000000 }
+        direction: { type: string, enum: [IN, OUT] }
+        reason: { type: string, minLength: 3, maxLength: 500 }
+    InventoryMovement:
+      type: object
+      required: [id, location_id, product_id, movement_type, physical_delta, reserved_delta, quarantine_delta,
+        ref_type, ref_id, reason, actor_type, actor_id, occurred_at, recorded_at]
+      properties:
+        id: { type: string, format: uuid }
+        location_id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        movement_type: { type: string }
+        physical_delta: { type: integer, format: int64 }
+        reserved_delta: { type: integer, format: int64 }
+        quarantine_delta: { type: integer, format: int64 }
+        ref_type: { type: string }
+        ref_id: { type: string, format: uuid }
+        reason: { type: [string, "null"] }
+        actor_type: { type: string, enum: [USER, DEVICE, SYSTEM, CONSUMER] }
+        actor_id: { type: [string, "null"], format: uuid }
+        occurred_at: { type: string, format: date-time }
+        recorded_at: { type: string, format: date-time }
+    InventoryBalance:
+      type: object
+      required: [location_id, product_id, physical_qty, reserved_qty, quarantine_qty, available_qty, updated_at]
+      properties:
+        location_id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        physical_qty: { type: integer, format: int64 }
+        reserved_qty: { type: integer, format: int64 }
+        quarantine_qty: { type: integer, format: int64 }
+        available_qty: { type: integer, format: int64 }
+        updated_at: { type: string, format: date-time }
+    InventoryStockChangeResponse:
+      type: object
+      required: [movement, balance, duplicate]
+      properties:
+        movement: { $ref: "#/components/schemas/InventoryMovement" }
+        balance: { $ref: "#/components/schemas/InventoryBalance" }
+        duplicate: { type: boolean, description: "true = replay Idempotency-Key, tanpa mutasi baru" }
+    OrderStatus:
+      type: string
+      enum: [PENDING_PAYMENT, PAID, FULFILLING, SHIPPED, DELIVERED, COMPLETED, EXPIRED, NEEDS_ACTION, CANCELLED, RETURNED]
+    OrderCreateLine:
+      type: object
+      additionalProperties: false
+      required: [product_id, qty]
+      properties:
+        product_id: { type: string, format: uuid }
+        qty: { type: integer, format: int64, minimum: 1, maximum: 1000 }
+    OrderCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [lines]
+      properties:
+        channel_code: { type: string, maxLength: 32, description: "Kosong = D2C_WEB; hanya channel bertipe D2C" }
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 50
+          description: Satu produk hanya boleh muncul sekali
+          items: { $ref: "#/components/schemas/OrderCreateLine" }
+        note: { type: string, maxLength: 500 }
+    OrderCancelRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 500 }
+    OrderFulfillLineSerials:
+      type: object
+      additionalProperties: false
+      required: [order_line_id, serial_unit_ids]
+      properties:
+        order_line_id: { type: string, format: uuid }
+        serial_unit_ids:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          items: { type: string, format: uuid }
+    OrderFulfillRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        serials:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/OrderFulfillLineSerials" }
+    OrderLine:
+      type: object
+      required: [id, product_id, sku, product_name, qty, unit_price, discount, serial_unit_ids]
+      properties:
+        id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        sku: { type: string }
+        product_name: { type: string }
+        qty: { type: integer, format: int64 }
+        unit_price: { type: integer, format: int64, description: Rupiah utuh }
+        discount: { type: integer, format: int64 }
+        serial_unit_ids:
+          type: array
+          items: { type: string, format: uuid }
+    OrderReservation:
+      type: object
+      required: [id, order_line_id, location_id, product_id, qty, status, expires_at, created_at, closed_at, close_reason]
+      properties:
+        id: { type: string, format: uuid }
+        order_line_id: { type: string, format: uuid }
+        location_id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        qty: { type: integer, format: int64 }
+        status: { type: string, enum: [ACTIVE, COMMITTED, RELEASED, EXPIRED, PREEMPTED] }
+        expires_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+        closed_at: { type: [string, "null"], format: date-time }
+        close_reason: { type: [string, "null"] }
+    OrderHistoryEntry:
+      type: object
+      required: [from_status, to_status, reason, actor_type, at]
+      properties:
+        from_status:
+          oneOf:
+            - $ref: "#/components/schemas/OrderStatus"
+            - type: "null"
+        to_status: { $ref: "#/components/schemas/OrderStatus" }
+        reason: { type: [string, "null"] }
+        actor_type: { type: string, enum: [USER, DEVICE, SYSTEM, CONSUMER] }
+        at: { type: string, format: date-time }
+    OrderPayment:
+      type: object
+      required: [id, provider, provider_ref, amount, currency, status, received_at]
+      properties:
+        id: { type: string, format: uuid }
+        provider: { type: string }
+        provider_ref: { type: string }
+        amount: { type: integer, format: int64 }
+        currency: { type: string }
+        status: { type: string, enum: [PENDING, SUCCEEDED, FAILED, REFUNDED] }
+        received_at: { type: string, format: date-time }
+    Order:
+      type: object
+      required: [id, channel_code, external_ref, status, currency, subtotal, discount, total, placed_at, paid_at,
+        payment_expires_at, fulfillment_location_id, metadata, lines, reservations, history, payments]
+      properties:
+        id: { type: string, format: uuid }
+        channel_code: { type: string }
+        external_ref: { type: [string, "null"] }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        currency: { type: string }
+        subtotal: { type: integer, format: int64 }
+        discount: { type: integer, format: int64 }
+        total: { type: integer, format: int64 }
+        placed_at: { type: string, format: date-time }
+        paid_at: { type: [string, "null"], format: date-time }
+        payment_expires_at: { type: [string, "null"], format: date-time }
+        fulfillment_location_id: { type: [string, "null"], format: uuid }
+        metadata:
+          type: object
+          additionalProperties: true
+          description: >
+            Catatan dan penanda operasional, misal note, refund_required,
+            refund_reason, refund_payment_ids, needs_action_reason,
+            expired_reason, split_fulfillment, payload_hash (impor marketplace).
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/OrderLine" }
+        reservations:
+          type: array
+          items: { $ref: "#/components/schemas/OrderReservation" }
+        history:
+          type: array
+          items: { $ref: "#/components/schemas/OrderHistoryEntry" }
+        payments:
+          type: array
+          items: { $ref: "#/components/schemas/OrderPayment" }
+    PaymentWebhookRequest:
+      type: object
+      additionalProperties: false
+      required: [provider_ref, order_id, amount, currency, status]
+      properties:
+        provider_ref: { type: string, maxLength: 128, description: "ID event/transaksi di provider; kunci idempotensi" }
+        order_id: { type: string, format: uuid }
+        amount: { type: integer, format: int64, minimum: 1 }
+        currency: { type: string, minLength: 3, maxLength: 3 }
+        status: { type: string, enum: [SUCCEEDED, FAILED] }
+        method: { type: string, maxLength: 32 }
+    PaymentWebhookResponse:
+      type: object
+      required: [payment_id, order_id, order_status, outcome, duplicate]
+      properties:
+        payment_id: { type: [string, "null"], format: uuid }
+        order_id: { type: string, format: uuid }
+        order_status: { $ref: "#/components/schemas/OrderStatus" }
+        outcome:
+          type: string
+          enum: [PAID, LATE_PAYMENT_REALLOCATED, LATE_PAYMENT_NEEDS_ACTION, PAYMENT_FAILED, REFUND_REQUIRED, ALREADY_PROCESSED]
+        duplicate: { type: boolean }
+    MarketplaceOrderLine:
+      type: object
+      additionalProperties: false
+      required: [sku, qty]
+      properties:
+        sku: { type: string, maxLength: 64 }
+        qty: { type: integer, format: int64, minimum: 1, maximum: 1000 }
+        unit_price: { type: integer, format: int64, minimum: 0, maximum: 1000000000000 }
+        discount: { type: integer, format: int64, minimum: 0, description: "≤ qty × unit_price" }
+    MarketplaceOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [channel_code, external_ref, lines]
+      properties:
+        channel_code: { type: string, maxLength: 32, description: "Channel bertipe MARKETPLACE (SHOPEE, TOKOPEDIA, TIKTOK_SHOP)" }
+        external_ref: { type: string, maxLength: 128 }
+        placed_at: { type: string, format: date-time }
+        currency: { type: string, minLength: 3, maxLength: 3, default: IDR }
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: "#/components/schemas/MarketplaceOrderLine" }
+    MarketplaceImportResponse:
+      type: object
+      required: [duplicate, order]
+      properties:
+        duplicate: { type: boolean }
+        order: { $ref: "#/components/schemas/Order" }
     # ==== [/inventory] ====
 
     # ==== [pos] ====

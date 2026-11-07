@@ -29,6 +29,8 @@ func TestLoad_ClaimPepper(t *testing.T) {
 			clearEnv(t)
 			t.Setenv("DATABASE_URL", "postgres://x")
 			t.Setenv("APP_ENV", tt.env)
+			// Secret webhook valid supaya kasus ini hanya menguji pepper.
+			t.Setenv("WEBHOOK_SECRET", strings.Repeat("w", MinWebhookSecretBytes))
 			if tt.setPepper {
 				t.Setenv("CLAIM_PEPPER", tt.pepper)
 			}
@@ -84,8 +86,27 @@ func TestLoad_DemoValuesInProduction(t *testing.T) {
 		},
 		{
 			name:     "production semua nilai demo dengan override diterima",
-			env:      map[string]string{"APP_ENV": EnvProduction, "CLAIM_PEPPER": DemoClaimPepper, "SEED_DEMO": "true", "SEED_DEMO_ALLOW_PRODUCTION": "true"},
+			env:      map[string]string{"APP_ENV": EnvProduction, "CLAIM_PEPPER": DemoClaimPepper, "SEED_DEMO": "true", "SEED_DEMO_ALLOW_PRODUCTION": "true", "WEBHOOK_SECRET": DemoWebhookSecret},
 			override: true,
+		},
+		{
+			name:     "production webhook secret demo tanpa override ditolak",
+			env:      map[string]string{"APP_ENV": EnvProduction, "CLAIM_PEPPER": realPepper, "WEBHOOK_SECRET": DemoWebhookSecret},
+			wantErrs: []string{"WEBHOOK_SECRET memakai nilai demo"},
+		},
+		{
+			name:     "production tanpa webhook secret ditolak",
+			env:      map[string]string{"APP_ENV": EnvProduction, "CLAIM_PEPPER": realPepper, "WEBHOOK_SECRET": ""},
+			wantErrs: []string{"WEBHOOK_SECRET wajib diisi"},
+		},
+		{
+			name:     "production webhook secret pendek ditolak walau override",
+			env:      map[string]string{"APP_ENV": EnvProduction, "CLAIM_PEPPER": realPepper, "WEBHOOK_SECRET": "pendek", "SEED_DEMO_ALLOW_PRODUCTION": "true"},
+			wantErrs: []string{"minimal 32 byte"},
+		},
+		{
+			name: "development tanpa webhook secret memakai demo",
+			env:  map[string]string{"APP_ENV": EnvDevelopment, "WEBHOOK_SECRET": ""},
 		},
 		{
 			name:     "production override tidak melonggarkan panjang pepper",
@@ -109,6 +130,8 @@ func TestLoad_DemoValuesInProduction(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			clearEnv(t)
 			t.Setenv("DATABASE_URL", "postgres://x")
+			// Default: secret webhook sungguhan; kasus webhook menimpanya lewat tt.env.
+			t.Setenv("WEBHOOK_SECRET", strings.Repeat("w", MinWebhookSecretBytes))
 			for k, v := range tt.env {
 				t.Setenv(k, v)
 			}
@@ -130,7 +153,8 @@ func TestLoad_DemoValuesInProduction(t *testing.T) {
 					t.Errorf("error tidak memuat %q:\n%v", want, err)
 				}
 			}
-			if strings.Contains(err.Error(), DemoClaimPepper) || strings.Contains(err.Error(), DefaultDemoPassword) {
+			if strings.Contains(err.Error(), DemoClaimPepper) || strings.Contains(err.Error(), DefaultDemoPassword) ||
+				strings.Contains(err.Error(), DemoWebhookSecret) {
 				t.Fatalf("pesan error membocorkan nilai secret: %v", err)
 			}
 		})
@@ -148,8 +172,21 @@ func TestDemoDefaultsMatchRepoFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 		s := string(b)
-		for name, val := range map[string]string{"CLAIM_PEPPER": DemoClaimPepper, "SEED_DEMO_PASSWORD": DefaultDemoPassword} {
-			if !strings.Contains(s, val) {
+		for name, val := range map[string]string{
+			"CLAIM_PEPPER":       DemoClaimPepper,
+			"SEED_DEMO_PASSWORD": DefaultDemoPassword,
+			"WEBHOOK_SECRET":     DemoWebhookSecret,
+		} {
+			// Nilai harus berada di baris yang sama dengan nama variabelnya,
+			// bukan sekadar muncul di suatu tempat di file.
+			onSameLine := false
+			for line := range strings.SplitSeq(s, "\n") {
+				if strings.Contains(line, name) && strings.Contains(line, val) {
+					onSameLine = true
+					break
+				}
+			}
+			if !onSameLine {
 				t.Errorf("%s: default %s tidak sama dengan konstanta Go", file, name)
 			}
 		}

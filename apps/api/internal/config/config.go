@@ -32,6 +32,26 @@ type Config struct {
 	// tidak pernah di DB.
 	ClaimPepper []byte
 	Seed        SeedConfig
+	Inventory   InventoryConfig
+}
+
+// InventoryConfig mengatur reservasi stok, worker latar, dan webhook
+// pembayaran/marketplace.
+type InventoryConfig struct {
+	// ReservationTTL: batas waktu bayar order online; reservasi stoknya
+	// dilepas sweeper setelah lewat (RESERVATION_TTL, default 15m).
+	ReservationTTL time.Duration
+	// RunWorker menjalankan sweeper reservasi dan dispatcher outbox di proses
+	// serve (RUN_WORKER, default true).
+	RunWorker bool
+	// WorkerInterval: jeda antar putaran worker (WORKER_INTERVAL, default 2s).
+	WorkerInterval time.Duration
+	// WebhookSecret: kunci HMAC-SHA256 untuk signature webhook pembayaran dan
+	// impor order marketplace (WEBHOOK_SECRET).
+	WebhookSecret []byte
+	// OutboxMaxAttempts: event outbox yang gagal sebanyak ini ditandai mati
+	// (dead-letter) dan tidak diambil lagi (OUTBOX_MAX_ATTEMPTS, default 10).
+	OutboxMaxAttempts int
 }
 
 // SeedConfig mengatur data demo (`api seed`, `api migrate --seed`).
@@ -61,6 +81,14 @@ const (
 	// DefaultDemoPassword dipakai kalau SEED_DEMO_PASSWORD kosong (dicatat di
 	// README). Aturan production sama dengan DemoClaimPepper.
 	DefaultDemoPassword = "mganik-demo-2026"
+
+	// MinWebhookSecretBytes adalah panjang minimum WEBHOOK_SECRET di production.
+	MinWebhookSecretBytes = 32
+	// DemoWebhookSecret adalah kunci HMAC webhook publik untuk stack demo.
+	// Nilai yang sama dipakai compose.yaml, Makefile, dan .env.example (dijaga
+	// test), sehingga skrip demo bisa menandatangani webhook mock. Aturan
+	// production sama dengan DemoClaimPepper.
+	DemoWebhookSecret = "demo-webhook-secret-ganti-sebelum-dipakai-sungguhan"
 )
 
 // DemoOverrideActive: production berjalan dengan izin data/kredensial demo.
@@ -104,6 +132,22 @@ func Load() (Config, error) {
 			DemoPassword:    r.str("SEED_DEMO_PASSWORD", DefaultDemoPassword),
 			AllowProduction: r.boolean("SEED_DEMO_ALLOW_PRODUCTION", false),
 		},
+		Inventory: InventoryConfig{
+			ReservationTTL: r.duration("RESERVATION_TTL", 15*time.Minute),
+			RunWorker:      r.boolean("RUN_WORKER", true),
+			WorkerInterval: r.duration("WORKER_INTERVAL", 2*time.Second),
+
+			OutboxMaxAttempts: r.positiveInt("OUTBOX_MAX_ATTEMPTS", 10),
+		},
+	}
+
+	// WEBHOOK_SECRET tidak di-trim, sama seperti CLAIM_PEPPER.
+	webhookSecret, hasWebhookSecret := os.LookupEnv("WEBHOOK_SECRET")
+	switch {
+	case hasWebhookSecret && webhookSecret != "":
+		cfg.Inventory.WebhookSecret = []byte(webhookSecret)
+	case cfg.AppEnv != EnvProduction:
+		cfg.Inventory.WebhookSecret = []byte(DemoWebhookSecret)
 	}
 
 	// CLAIM_PEPPER tidak di-trim: spasi di dalam secret tetap bagian dari kunci.
@@ -122,12 +166,19 @@ func Load() (Config, error) {
 			errs = append(errs, fmt.Errorf("CLAIM_PEPPER wajib diisi minimal %d byte di production (sekarang %d byte)",
 				MinClaimPepperBytes, len(cfg.ClaimPepper)))
 		}
+		if len(cfg.Inventory.WebhookSecret) < MinWebhookSecretBytes {
+			errs = append(errs, fmt.Errorf("WEBHOOK_SECRET wajib diisi minimal %d byte di production (sekarang %d byte)",
+				MinWebhookSecretBytes, len(cfg.Inventory.WebhookSecret)))
+		}
 		// Nilai demo ada di repo publik: di production hanya boleh dengan izin
 		// eksplisit (stack demo lokal).
 		if !cfg.Seed.AllowProduction {
 			const hint = "set SEED_DEMO_ALLOW_PRODUCTION=true hanya untuk stack demo lokal"
 			if string(cfg.ClaimPepper) == DemoClaimPepper {
 				errs = append(errs, fmt.Errorf("CLAIM_PEPPER memakai nilai demo publik di production (%s)", hint))
+			}
+			if string(cfg.Inventory.WebhookSecret) == DemoWebhookSecret {
+				errs = append(errs, fmt.Errorf("WEBHOOK_SECRET memakai nilai demo publik di production (%s)", hint))
 			}
 			if cfg.Seed.Demo {
 				errs = append(errs, fmt.Errorf("SEED_DEMO=true ditolak di production (%s)", hint))

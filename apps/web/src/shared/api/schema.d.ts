@@ -38,10 +38,467 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/inventory/balances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Saldo stok per (lokasi, produk) dengan ATP online
+         * @description Pagination keyset (location_id, product_id) lewat cursor opaque. Principal ber-scope SELECTED hanya melihat lokasinya. online_atp = available − online_buffer_qty, dan 0 kalau POS lokasi OFFLINE. Permission inventory.read.
+         */
+        get: operations["listInventoryBalances"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inventory/adjustments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stock opname (ADJUST_COUNT ±) dengan alasan wajib, diaudit
+         * @description Idempotency-Key yang sama dengan isi sama = 200 duplicate (tanpa mutasi baru); isi berbeda = 422 idempotency_key_reused. Mengurangi melebihi available = 409 insufficient_stock. Permission inventory.adjust.
+         */
+        post: operations["createInventoryAdjustment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inventory/quarantine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pindah stok ke karantina (IN) atau rilis (OUT), diaudit
+         * @description Permission inventory.quarantine. Semantik Idempotency-Key sama dengan adjustment.
+         */
+        post: operations["moveInventoryQuarantine"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Buat order D2C dan pesan stok (PENDING_PAYMENT)
+         * @description Harga dari price list channel. Seluruh line dipesan di SATU lokasi (gudang pusat dulu, lalu lokasi lain yang online_fulfillment_enabled), all-or-nothing, dengan batas bayar RESERVATION_TTL. Idempotency-Key wajib: replay = respons identik + header Idempotent-Replayed: true, isi berbeda = 422 idempotency_key_reused, masih diproses = 409 idempotency_in_progress. Stok tidak cukup = 409 out_of_stock dengan errors[] per line (field lines[i].qty, code insufficient_stock atau not_at_single_location). Permission order.create.
+         */
+        post: operations["createOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/orders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Order lengkap (line, reservasi, riwayat status, pembayaran)
+         * @description Permission order.read; principal SELECTED hanya order dari lokasinya.
+         */
+        get: operations["getOrder"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/orders/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batalkan order dan lepas reservasinya
+         * @description Dari PENDING_PAYMENT, PAID, atau NEEDS_ACTION. Order yang sudah dibayar ditandai metadata.refund_required. Membatalkan order CANCELLED = 200 apa adanya. Permission order.cancel.
+         */
+        post: operations["cancelOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/orders/{id}/fulfill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Penuhi order PAID (COMMIT_SALE, PAID → FULFILLING → SHIPPED)
+         * @description Body opsional: serial unit per line dicatat di order_line_serials (satu unit hanya terjual sekali = 409 serial_already_sold). Order SHIPPED = 200 apa adanya. Permission order.fulfill + semua lokasi reservasi di scope.
+         */
+        post: operations["fulfillOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/webhooks/payments/mock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Webhook pembayaran mock (signature HMAC, idempotent per provider_ref)
+         * @description Nominal dan mata uang harus sama dengan total order. PENDING_PAYMENT → PAID. Bayar telat (EXPIRED): stok dipesan ulang → PAID, atau NEEDS_ACTION + refund kalau stok habis. Kiriman ulang = 200 ALREADY_PROCESSED.
+         */
+        post: operations["paymentWebhookMock"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/channels/marketplace/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Impor order marketplace yang sudah dibayar (signature HMAC)
+         * @description Dedupe per (channel_code, external_ref): impor ulang dengan isi sama = 200 duplicate dengan order yang sama; isi berbeda = 409 external_ref_conflict. Order langsung PAID; stok tidak cukup → order tetap dibuat lalu NEEDS_ACTION (tidak ditolak).
+         */
+        post: operations["importMarketplaceOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        InventoryBalanceItem: {
+            /** Format: uuid */
+            location_id: string;
+            location_code: string;
+            location_name: string;
+            /** @description CENTRAL_WH, HUB, OWN_STORE, ... */
+            location_type: string;
+            /** @enum {string} */
+            sync_state: "NOT_TRACKED" | "ONLINE" | "OFFLINE";
+            /** Format: uuid */
+            product_id: string;
+            sku: string;
+            product_name: string;
+            /** Format: int64 */
+            physical_qty: number;
+            /** Format: int64 */
+            reserved_qty: number;
+            /** Format: int64 */
+            quarantine_qty: number;
+            /**
+             * Format: int64
+             * @description physical − reserved − quarantine
+             */
+            available_qty: number;
+            /** Format: int64 */
+            online_buffer_qty: number;
+            /**
+             * Format: int64
+             * @description Stok yang boleh dijanjikan ke online (0 kalau OFFLINE)
+             */
+            online_atp: number;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        InventoryBalancePage: {
+            items: components["schemas"]["InventoryBalanceItem"][];
+            /** @description null = halaman terakhir */
+            next_cursor: string | null;
+        };
+        InventoryAdjustmentRequest: {
+            /** Format: uuid */
+            location_id: string;
+            /** Format: uuid */
+            product_id: string;
+            /**
+             * Format: int64
+             * @description ≠ 0; negatif = kurang
+             */
+            qty_delta: number;
+            /** @description Wajib, 3-500 karakter (unicode) */
+            reason: string;
+        };
+        InventoryQuarantineRequest: {
+            /** Format: uuid */
+            location_id: string;
+            /** Format: uuid */
+            product_id: string;
+            /** Format: int64 */
+            qty: number;
+            /** @enum {string} */
+            direction: "IN" | "OUT";
+            reason: string;
+        };
+        InventoryMovement: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            location_id: string;
+            /** Format: uuid */
+            product_id: string;
+            movement_type: string;
+            /** Format: int64 */
+            physical_delta: number;
+            /** Format: int64 */
+            reserved_delta: number;
+            /** Format: int64 */
+            quarantine_delta: number;
+            ref_type: string;
+            /** Format: uuid */
+            ref_id: string;
+            reason: string | null;
+            /** @enum {string} */
+            actor_type: "USER" | "DEVICE" | "SYSTEM" | "CONSUMER";
+            /** Format: uuid */
+            actor_id: string | null;
+            /** Format: date-time */
+            occurred_at: string;
+            /** Format: date-time */
+            recorded_at: string;
+        };
+        InventoryBalance: {
+            /** Format: uuid */
+            location_id: string;
+            /** Format: uuid */
+            product_id: string;
+            /** Format: int64 */
+            physical_qty: number;
+            /** Format: int64 */
+            reserved_qty: number;
+            /** Format: int64 */
+            quarantine_qty: number;
+            /** Format: int64 */
+            available_qty: number;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        InventoryStockChangeResponse: {
+            movement: components["schemas"]["InventoryMovement"];
+            balance: components["schemas"]["InventoryBalance"];
+            /** @description true = replay Idempotency-Key, tanpa mutasi baru */
+            duplicate: boolean;
+        };
+        /** @enum {string} */
+        OrderStatus: "PENDING_PAYMENT" | "PAID" | "FULFILLING" | "SHIPPED" | "DELIVERED" | "COMPLETED" | "EXPIRED" | "NEEDS_ACTION" | "CANCELLED" | "RETURNED";
+        OrderCreateLine: {
+            /** Format: uuid */
+            product_id: string;
+            /** Format: int64 */
+            qty: number;
+        };
+        OrderCreateRequest: {
+            /** @description Kosong = D2C_WEB; hanya channel bertipe D2C */
+            channel_code?: string;
+            /** @description Satu produk hanya boleh muncul sekali */
+            lines: components["schemas"]["OrderCreateLine"][];
+            note?: string;
+        };
+        OrderCancelRequest: {
+            reason: string;
+        };
+        OrderFulfillLineSerials: {
+            /** Format: uuid */
+            order_line_id: string;
+            serial_unit_ids: string[];
+        };
+        OrderFulfillRequest: {
+            serials?: components["schemas"]["OrderFulfillLineSerials"][];
+        };
+        OrderLine: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            product_id: string;
+            sku: string;
+            product_name: string;
+            /** Format: int64 */
+            qty: number;
+            /**
+             * Format: int64
+             * @description Rupiah utuh
+             */
+            unit_price: number;
+            /** Format: int64 */
+            discount: number;
+            serial_unit_ids: string[];
+        };
+        OrderReservation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            order_line_id: string;
+            /** Format: uuid */
+            location_id: string;
+            /** Format: uuid */
+            product_id: string;
+            /** Format: int64 */
+            qty: number;
+            /** @enum {string} */
+            status: "ACTIVE" | "COMMITTED" | "RELEASED" | "EXPIRED" | "PREEMPTED";
+            /** Format: date-time */
+            expires_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            closed_at: string | null;
+            close_reason: string | null;
+        };
+        OrderHistoryEntry: {
+            from_status: components["schemas"]["OrderStatus"] | null;
+            to_status: components["schemas"]["OrderStatus"];
+            reason: string | null;
+            /** @enum {string} */
+            actor_type: "USER" | "DEVICE" | "SYSTEM" | "CONSUMER";
+            /** Format: date-time */
+            at: string;
+        };
+        OrderPayment: {
+            /** Format: uuid */
+            id: string;
+            provider: string;
+            provider_ref: string;
+            /** Format: int64 */
+            amount: number;
+            currency: string;
+            /** @enum {string} */
+            status: "PENDING" | "SUCCEEDED" | "FAILED" | "REFUNDED";
+            /** Format: date-time */
+            received_at: string;
+        };
+        Order: {
+            /** Format: uuid */
+            id: string;
+            channel_code: string;
+            external_ref: string | null;
+            status: components["schemas"]["OrderStatus"];
+            currency: string;
+            /** Format: int64 */
+            subtotal: number;
+            /** Format: int64 */
+            discount: number;
+            /** Format: int64 */
+            total: number;
+            /** Format: date-time */
+            placed_at: string;
+            /** Format: date-time */
+            paid_at: string | null;
+            /** Format: date-time */
+            payment_expires_at: string | null;
+            /** Format: uuid */
+            fulfillment_location_id: string | null;
+            /** @description Catatan dan penanda operasional, misal note, refund_required, refund_reason, refund_payment_ids, needs_action_reason, expired_reason, split_fulfillment, payload_hash (impor marketplace). */
+            metadata: {
+                [key: string]: unknown;
+            };
+            lines: components["schemas"]["OrderLine"][];
+            reservations: components["schemas"]["OrderReservation"][];
+            history: components["schemas"]["OrderHistoryEntry"][];
+            payments: components["schemas"]["OrderPayment"][];
+        };
+        PaymentWebhookRequest: {
+            /** @description ID event/transaksi di provider; kunci idempotensi */
+            provider_ref: string;
+            /** Format: uuid */
+            order_id: string;
+            /** Format: int64 */
+            amount: number;
+            currency: string;
+            /** @enum {string} */
+            status: "SUCCEEDED" | "FAILED";
+            method?: string;
+        };
+        PaymentWebhookResponse: {
+            /** Format: uuid */
+            payment_id: string | null;
+            /** Format: uuid */
+            order_id: string;
+            order_status: components["schemas"]["OrderStatus"];
+            /** @enum {string} */
+            outcome: "PAID" | "LATE_PAYMENT_REALLOCATED" | "LATE_PAYMENT_NEEDS_ACTION" | "PAYMENT_FAILED" | "REFUND_REQUIRED" | "ALREADY_PROCESSED";
+            duplicate: boolean;
+        };
+        MarketplaceOrderLine: {
+            sku: string;
+            /** Format: int64 */
+            qty: number;
+            /** Format: int64 */
+            unit_price?: number;
+            /**
+             * Format: int64
+             * @description ≤ qty × unit_price
+             */
+            discount?: number;
+        };
+        MarketplaceOrderRequest: {
+            /** @description Channel bertipe MARKETPLACE (SHOPEE, TOKOPEDIA, TIKTOK_SHOP) */
+            channel_code: string;
+            external_ref: string;
+            /** Format: date-time */
+            placed_at?: string;
+            /** @default IDR */
+            currency: string;
+            lines: components["schemas"]["MarketplaceOrderLine"][];
+        };
+        MarketplaceImportResponse: {
+            duplicate: boolean;
+            order: components["schemas"]["Order"];
+        };
         LiveResponse: {
             /** @constant */
             status: "ok";
@@ -119,6 +576,633 @@ export interface operations {
                 };
             };
             /** @description Belum siap */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listInventoryBalances: {
+        parameters: {
+            query?: {
+                location_id?: string;
+                product_id?: string;
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Satu halaman saldo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventoryBalancePage"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createInventoryAdjustment: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Kunci idempotensi dari klien (1-255 karakter ASCII terlihat) */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InventoryAdjustmentRequest"];
+            };
+        };
+        responses: {
+            /** @description Replay Idempotency-Key (duplicate=true) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventoryStockChangeResponse"];
+                };
+            };
+            /** @description Mutasi dicatat */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventoryStockChangeResponse"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    moveInventoryQuarantine: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Kunci idempotensi dari klien (1-255 karakter ASCII terlihat) */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InventoryQuarantineRequest"];
+            };
+        };
+        responses: {
+            /** @description Replay Idempotency-Key (duplicate=true) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventoryStockChangeResponse"];
+                };
+            };
+            /** @description Mutasi dicatat */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventoryStockChangeResponse"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createOrder: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Kunci idempotensi dari klien (1-255 karakter ASCII terlihat) */
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Order dibuat (atau replay) */
+            201: {
+                headers: {
+                    /** @description true kalau respons adalah replay */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Order */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    cancelOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderCancelRequest"];
+            };
+        };
+        responses: {
+            /** @description Order sesudah dibatalkan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    fulfillOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["OrderFulfillRequest"];
+            };
+        };
+        responses: {
+            /** @description Order sesudah dikirim */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    paymentWebhookMock: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Unix detik; harus dalam ±5 menit dari jam server (401 stale_timestamp) */
+                "X-Mganik-Timestamp": string;
+                /** @description v1=<hex HMAC-SHA256(WEBHOOK_SECRET, timestamp + "." + body)> (401 invalid_signature) */
+                "X-Mganik-Signature": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaymentWebhookRequest"];
+            };
+        };
+        responses: {
+            /** @description Event diproses (atau duplikat) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentWebhookResponse"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    importMarketplaceOrder: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Unix detik; harus dalam ±5 menit dari jam server (401 stale_timestamp) */
+                "X-Mganik-Timestamp": string;
+                /** @description v1=<hex HMAC-SHA256(WEBHOOK_SECRET, timestamp + "." + body)> (401 invalid_signature) */
+                "X-Mganik-Signature": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarketplaceOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description Duplikat (order yang sudah ada) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketplaceImportResponse"];
+                };
+            };
+            /** @description Order baru */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketplaceImportResponse"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
             503: {
                 headers: {
                     [name: string]: unknown;
