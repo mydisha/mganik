@@ -88,6 +88,17 @@ func DemoDeviceTokenHash() []byte {
 	return sum[:]
 }
 
+// DemoDeviceSigningKey: signing key HMAC transaksi device POS demo (32 byte),
+// satu-satunya sumber nilai ini. Diturunkan dari demoFixtureKey publik, jadi
+// BUKAN rahasia; seed menyimpannya terenkripsi (PII_ENC_KEY) dan `api seed
+// --print-demo` mencetaknya dalam hex. Tidak pernah ditulis ke log.
+func DemoDeviceSigningKey() []byte {
+	return derive("pos-device-signing-key:" + StoreJakselCode + ":1")
+}
+
+// DemoDeviceSigningKeyHex: format yang dipakai klien POS (hex huruf kecil).
+func DemoDeviceSigningKeyHex() string { return hex.EncodeToString(DemoDeviceSigningKey()) }
+
 // DemoUnit menggambarkan satu unit demo beserta karton induknya.
 type DemoUnit struct {
 	Index      int

@@ -594,6 +594,244 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/pos/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Daftar device POS di lokasi dalam scope pos.device.manage
+         * @description Pagination keyset (created_at, id) terbaru dulu. Tidak pernah memuat token atau signing key.
+         */
+        get: operations["listPosDevices"];
+        put?: never;
+        /**
+         * Provisioning device POS (token + signing key, hanya sekali)
+         * @description Permission pos.device.manage di lokasi tujuan (scope per permission). Lokasi wajib toko sendiri (OWN_STORE) yang aktif, selain itu 422 location_not_store / location_not_found. Token bearer dan signing key acak 256 bit HANYA dikembalikan di respons ini (Cache-Control: no-store); server menyimpan SHA-256 token dan signing key terenkripsi AES-256-GCM (subkey HKDF dari PII_ENC_KEY, AAD = id device). Tidak ada replay Idempotency-Key (replay berarti menyimpan token polos): retry yang membuat device ganda diselesaikan dengan mencabut device lebih. Toko NOT_TRACKED menjadi OFFLINE sampai heartbeat pertama. Diaudit.
+         */
+        post: operations["provisionPosDevice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/pos/devices/{id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cabut device POS (token langsung ditolak 401)
+         * @description Permission pos.device.manage di lokasi device (di luar scope 403, tidak ada 404). Mencabut device yang sudah dicabut mengembalikan keadaannya (idempotent, tanpa audit kedua). Body opsional. Batasan: penjualan offline yang belum tersinkron dari device yang sudah dicabut tidak bisa masuk lewat /pos/sync (token 401); pemulihannya manual (ekspor outbox/struk, dicatat ops setelah verifikasi). Pastikan heartbeat terakhir device melaporkan pending_count 0 sebelum mencabut. Toko yang tidak lagi punya device ACTIVE kembali NOT_TRACKED.
+         */
+        post: operations["revokePosDevice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/pos/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Data referensi untuk operasi offline (device)
+         * @description Satu snapshot konsisten (REPEATABLE READ): katalog produk aktif, price list POS yang berlaku + version (bawa sebagai price_list_version di transaksi), snapshot stok lokasi, halaman pertama serial UNIT IN_STOCK di lokasi (2.000 per halaman, lanjutkan dengan /pos/bootstrap/serials?cursor=), kasir yang boleh login (user aktif ber-scope pos.sync di lokasi ini dan sudah punya PIN) beserta pos_pin_hash argon2id untuk login lokal, server_time, dan batas offline. Trade-off: hash PIN di device bisa di-brute force offline kalau device dicuri; dampaknya terbatas karena server tetap memeriksa token device (bisa dicabut) dan cashier_id setiap transaksi. Cache-Control: no-store.
+         */
+        get: operations["getPosBootstrap"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/pos/bootstrap/serials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Halaman berikutnya serial UNIT IN_STOCK di lokasi device */
+        get: operations["listPosBootstrapSerials"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/pos/heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Heartbeat device (disarankan setiap heartbeat_interval_seconds)
+         * @description Selalu memperbarui pos_devices.last_seen_at. Toko baru dijadikan ONLINE (locations.sync_state + last_heartbeat_at, monoton) kalau pending_count = 0 DAN server tidak melihat gap seq device ini; selain itu online_blocked_reason berisi pending_count_missing, pending_outbox, atau missing_seqs dan toko tidak diperpanjang ONLINE. Alasannya: selama penjualan offline belum tersinkron, stok toko di server belum benar, jadi ATP online toko harus tetap 0. Urutan klien setelah internet kembali: kirim outbox (/pos/sync) sampai habis, LALU heartbeat dengan pending_count 0. Worker menandai lokasi OFFLINE kalau tidak ada heartbeat "bersih" lebih dari heartbeat_timeout_seconds (default 120).
+         */
+        post: operations["postPosHeartbeat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/pos/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rekonsiliasi transaksi offline POS (idempotent, per transaksi)
+         * @description Batch maksimal sync_max_batch (500) transaksi, body maksimal
+         *     sync_max_body_bytes (5 MiB). Transaksi diproses urut device_seq,
+         *     masing-masing di transaksi database sendiri; satu transaksi gagal tidak
+         *     menghentikan yang lain. Penjualan adalah fakta: TIDAK pernah ditolak
+         *     karena stok atau serial ("fakta menang atas janji").
+         *
+         *     **Identitas:** client_txn_id (UUID, disarankan v7) dan device_seq
+         *     (bilangan bulat 1..2^53-1, monoton per device, diambil dalam transaksi
+         *     IndexedDB). Item yang identitasnya tidak bisa dibaca dijawab REJECTED
+         *     invalid_payload TANPA disimpan (cocokkan lewat `results[].index`);
+         *     item lain tetap diproses. 400/422 untuk seluruh batch hanya kalau
+         *     struktur batch rusak atau lebih dari sync_max_batch. id/seq yang sama
+         *     dua kali di satu batch diperlakukan seperti pengiriman ulang.
+         *
+         *     **Signature dicek sebelum apa pun disimpan.** Transaksi bersignature
+         *     salah (atau yang tidak bisa dikanonisasi) TIDAK disimpan dan tidak
+         *     menempati client_txn_id maupun device_seq: kirim ulang versi yang
+         *     ditandatangani benar tetap diterima. Signature salah dicatat sebagai
+         *     anomali POS_PAYLOAD_MISMATCH (satu per device per hari, hit_count).
+         *
+         *     **Kanonisasi untuk signature dan payload_hash** (subset RFC 8785/JCS):
+         *     1. Ambil objek transaksi apa adanya, buang member tingkat atas
+         *        `signature`. Member lain (termasuk yang tidak dikenal) ikut
+         *        ditandatangani.
+         *     2. Urutkan key objek secara rekursif menurut unit kode UTF-16 (sama
+         *        dengan `Array.prototype.sort()` bawaan JS); key ganda ditolak.
+         *     3. Serialisasi tanpa spasi; string di-escape persis seperti
+         *        `JSON.stringify` (\" \\ \b \f \n \r \t, kontrol lain \u00xx huruf
+         *        kecil, karakter lain termasuk non-ASCII ditulis apa adanya dalam
+         *        UTF-8); urutan array dipertahankan.
+         *     4. Angka hanya bilangan bulat |n| <= 2^53-1 (uang dalam rupiah utuh),
+         *        tanpa pecahan/eksponen. Surrogate UTF-16 tunggal ditulis \udxxx
+         *        seperti JSON.stringify (signature tetap terverifikasi), tetapi
+         *        transaksinya REJECTED invalid_payload (disimpan, tanpa anomali).
+         *
+         *     Referensi JS:
+         *     ```js
+         *     const canon = (v) => Array.isArray(v) ? '[' + v.map(canon).join(',') + ']'
+         *       : v !== null && typeof v === 'object'
+         *         ? '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}'
+         *         : JSON.stringify(v);
+         *     const { signature, ...rest } = txn;
+         *     const bytes = new TextEncoder().encode(canon(rest));
+         *     const key = await crypto.subtle.importKey('raw', hexToBytes(signingKey),
+         *       { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+         *     txn.signature = bytesToHex(new Uint8Array(await crypto.subtle.sign('HMAC', key, bytes)));
+         *     ```
+         *     signature = hex huruf kecil HMAC-SHA256(signing_key, kanonis);
+         *     payload_hash server = SHA-256(kanonis).
+         *
+         *     **Status per transaksi** (`results[].status`):
+         *     - ACCEPTED: dicatat (stok, serial, order POS COMPLETED, pembayaran).
+         *     - ACCEPTED_WITH_CONFLICT: dicatat, plus `detail.conflicts`
+         *       (OFFLINE_SALE_PREEMPT: reservasi online dikalahkan;
+         *       STOCK_DISCREPANCY: stok fisik tercatat kurang; SERIAL_DOUBLE_SALE:
+         *       serial terdaftar tapi sudah terjual/salah lokasi/bukan unit/produk
+         *       lain, tidak diubah; SERIAL_UNREGISTERED: serial tidak terdaftar,
+         *       anomali POS_UNREGISTERED_SERIAL; PAYMENT_REF_DUPLICATE: approval_ref
+         *       sudah dipakai transaksi lain, pembayaran dicatat PENDING).
+         *     - REJECTED: tidak ada efek stok/order; `detail.reason`:
+         *       - disimpan (kirim ulang = DUPLICATE, seq terisi): invalid_payload
+         *         (bersignature sah), cashier_not_allowed (kasir tidak dikenal atau
+         *         tanpa role pos.sync di lokasi), unknown_product, validation_failed,
+         *         invalid_characters, total_mismatch, payment_insufficient;
+         *       - idempotency_key_reused (client_txn_id sudah dipakai dengan isi
+         *         berbeda; transaksi asli tetap berlaku; seq baru diisi baris
+         *         tombstone REJECTED supaya ack maju; anomali POS_PAYLOAD_MISMATCH);
+         *       - TIDAK disimpan: invalid_signature, invalid_payload yang tidak
+         *         bisa diverifikasi (identitas rusak / tidak bisa dikanonisasi),
+         *         device_seq_reused (seq sudah dipakai transaksi lain; anomali).
+         *     - DUPLICATE: sudah pernah diproses; `result` dan `detail` adalah hasil
+         *       asli, identik byte per byte dengan respons pertama.
+         *     - RETRY: gagal sementara (stock_contended / temporary_failure), tidak
+         *       disimpan; kirim ulang nanti.
+         *     Hapus dari outbox untuk ACCEPTED, ACCEPTED_WITH_CONFLICT, DUPLICATE;
+         *     pindahkan REJECTED ke daftar "perlu perhatian"; pertahankan RETRY.
+         *
+         *     **Flag** (`detail.flags`, transaksi tetap ACCEPTED): PRICE_STALE
+         *     (price_list_version bukan versi yang berlaku saat transaksi),
+         *     OFFLINE_TOO_LONG (terjadi > offline_limit_seconds sebelum diterima),
+         *     CLOCK_SKEW (|server_time − client_time| > toleransi), FUTURE_TIMESTAMP,
+         *     PRICE_MISMATCH (unit_price beda dari price list yang berlaku pada
+         *     waktu transaksi), HIGH_DISCOUNT (diskon line > high_discount_percent),
+         *     OFFLINE_VALUE_LIMIT (total > offline_value_limit; + anomali),
+         *     ZERO_TOTAL, CASHIER_INACTIVE (kasir punya role di lokasi tetapi user
+         *     sudah nonaktif saat sync; penjualan tetap fakta; + anomali),
+         *     SERIAL_INVALID_FORMAT (kode yang dipindai bukan format serial; daftar
+         *     di `detail.invalid_serials`, tanpa anomali). Kode serial dinormalisasi
+         *     seperti verifikasi konsumen (huruf besar, tanpa spasi/strip, I/L→1,
+         *     O→0). occurred_at device disimpan apa adanya; ledger/order memakai
+         *     occurred_at + clock_skew_ms (dibatasi <= waktu terima).
+         *
+         *     **ack_up_to_seq** = N terbesar sehingga seq 1..N device ini sudah
+         *     tersimpan (hasil apa pun yang disimpan, termasuk REJECTED dan
+         *     tombstone). missing_seqs = seq yang
+         *     belum diterima antara ack_up_to_seq+1 dan seq tertinggi yang tersimpan
+         *     (maks. 500; missing_seqs_truncated kalau terpotong). Batch kosong boleh
+         *     dipakai untuk menanyakan ack.
+         */
+        post: operations["syncPosTransactions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cc/conflicts/{id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tutup konflik alokasi OPEN → RESOLVED
+         * @description Permission conflict.resolve di lokasi konflik (CanAt). Konflik di luar scope dijawab 404 conflict_not_found (sama dengan /cc/anomalies/{id}). Hanya status OPEN; AUTO_RESOLVED/RESOLVED = 409 invalid_transition. Dua permintaan bersamaan: tepat satu menang. ORDER_CANCELLED hanya sah kalau order terkait sudah CANCELLED/EXPIRED (selain itu, termasuk konflik tanpa order, 409 resolution_not_applicable). Catatan disimpan di details.resolution_note dan audit_logs.
+         */
+        post: operations["resolveAllocationConflict"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cc/summary": {
         parameters: {
             query?: never;
@@ -1382,6 +1620,333 @@ export interface components {
         MarketplaceImportResponse: {
             duplicate: boolean;
             order: components["schemas"]["Order"];
+        };
+        PosDeviceCreateRequest: {
+            /** Format: uuid */
+            location_id: string;
+            /** @description 1-100 karakter (unicode), tanpa karakter kontrol */
+            name: string;
+        };
+        PosDeviceRevokeRequest: {
+            reason?: string;
+        };
+        PosDevice: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            location_id: string;
+            location_code: string;
+            location_name: string;
+            name: string;
+            /** @enum {string} */
+            status: "ACTIVE" | "REVOKED";
+            /** Format: date-time */
+            last_seen_at: string | null;
+            /** Format: int64 */
+            last_acked_seq: number;
+            /** Format: uuid */
+            provisioned_by: string | null;
+            /** Format: date-time */
+            revoked_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        PosDeviceProvisioned: {
+            device: components["schemas"]["PosDevice"];
+            /** @description Token bearer device (prefix pos_). Hanya ditampilkan sekali. */
+            token: string;
+            /** @description Kunci HMAC-SHA256 transaksi (32 byte, hex huruf kecil). Hanya ditampilkan sekali. */
+            signing_key: string;
+        };
+        PosDevicePage: {
+            items: components["schemas"]["PosDevice"][];
+            /** @description null = halaman terakhir */
+            next_cursor: string | null;
+        };
+        PosBootstrap: {
+            /** Format: date-time */
+            server_time: string;
+            device: components["schemas"]["PosDevice"];
+            location: {
+                /** Format: uuid */
+                id: string;
+                code: string;
+                name: string;
+                timezone: string;
+                /** @enum {string} */
+                sync_state: "NOT_TRACKED" | "ONLINE" | "OFFLINE";
+            };
+            limits: {
+                /** Format: int64 */
+                offline_limit_seconds: number;
+                /** Format: int64 */
+                heartbeat_interval_seconds: number;
+                /** Format: int64 */
+                heartbeat_timeout_seconds: number;
+                /** Format: int64 */
+                clock_skew_tolerance_seconds: number;
+                sync_max_batch: number;
+                /** Format: int64 */
+                sync_max_body_bytes: number;
+                /** @description Batas serial per transaksi (selain <= qty per line) */
+                max_serials_per_txn: number;
+                /** @description Diskon line di atas ini → flag HIGH_DISCOUNT */
+                high_discount_percent: number;
+                /**
+                 * Format: int64
+                 * @description Total di atas ini → flag OFFLINE_VALUE_LIMIT
+                 */
+                offline_value_limit: number;
+            };
+            products: {
+                /** Format: uuid */
+                id: string;
+                sku: string;
+                gtin: string | null;
+                name: string;
+                uom: string;
+            }[];
+            /** @description Price list POS yang berlaku sekarang (list khusus lokasi menggantikan list default seluruhnya). null kalau belum ada. */
+            price_list: null | {
+                /** Format: uuid */
+                id: string;
+                code: string;
+                /**
+                 * Format: int64
+                 * @description Dibawa sebagai price_list_version di transaksi
+                 */
+                version: number;
+                /** Format: uuid */
+                location_id: string | null;
+                currency: string;
+                /** Format: date-time */
+                valid_from: string;
+                /** Format: date-time */
+                valid_to: string | null;
+                items: {
+                    /** Format: uuid */
+                    product_id: string;
+                    /** Format: int64 */
+                    price: number;
+                }[];
+            };
+            stock: {
+                /** Format: uuid */
+                product_id: string;
+                /** Format: int64 */
+                physical_qty: number;
+                /** Format: int64 */
+                reserved_qty: number;
+                /** Format: int64 */
+                quarantine_qty: number;
+                /** Format: int64 */
+                available_qty: number;
+            }[];
+            cashiers: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** @description argon2id PHC, untuk verifikasi PIN lokal */
+                pos_pin_hash: string;
+            }[];
+            serials: components["schemas"]["PosSerialPage"];
+        };
+        PosSerialPage: {
+            items: {
+                code: string;
+                /** Format: uuid */
+                product_id: string;
+            }[];
+            next_cursor: string | null;
+        };
+        PosHeartbeatRequest: {
+            /**
+             * Format: date-time
+             * @description Jam device; dipakai menghitung clock_skew_ms
+             */
+            client_time?: string;
+            /**
+             * Format: int64
+             * @description Jumlah transaksi di outbox yang belum ter-ack. Wajib 0 (dan tanpa gap seq di server) supaya toko dijadikan ONLINE; tidak dikirim = dianggap belum diketahui (toko tidak dijadikan ONLINE).
+             */
+            pending_count?: number;
+        };
+        PosHeartbeatResponse: {
+            /** Format: date-time */
+            server_time: string;
+            /** @enum {string} */
+            location_sync_state: "NOT_TRACKED" | "ONLINE" | "OFFLINE";
+            /** Format: int64 */
+            last_acked_seq: number;
+            /** Format: int64 */
+            heartbeat_interval_seconds: number;
+            /** Format: int64 */
+            heartbeat_timeout_seconds: number;
+            /**
+             * Format: int64
+             * @description server_time − client_time
+             */
+            clock_skew_ms: number | null;
+            /**
+             * @description null = heartbeat ini menjadikan toko ONLINE
+             * @enum {string|null}
+             */
+            online_blocked_reason: "pending_count_missing" | "pending_outbox" | "missing_seqs" | null;
+        };
+        /** @description Satu transaksi kasir (dibuat offline). Total = Σ(qty × unit_price − discount); pembayaran >= total (kembalian hanya dari CASH; non-tunai tidak boleh melebihi total); teks bebas tanpa karakter kontrol (\n dan \t boleh di note). Field yang tidak dikenal membuat transaksi REJECTED invalid_payload (tetap ikut ditandatangani). */
+        PosTransaction: {
+            /** Format: uuid */
+            client_txn_id: string;
+            /** Format: int64 */
+            device_seq: number;
+            /**
+             * Format: uuid
+             * @description User aktif ber-scope pos.sync di lokasi device
+             */
+            cashier_id: string;
+            /**
+             * Format: date-time
+             * @description Jam device saat transaksi
+             */
+            occurred_at: string;
+            /** Format: int64 */
+            price_list_version: number;
+            /** Format: int64 */
+            total: number;
+            note?: string;
+            lines: {
+                /** Format: uuid */
+                product_id: string;
+                /** Format: int64 */
+                qty: number;
+                /** Format: int64 */
+                unit_price: number;
+                /**
+                 * Format: int64
+                 * @description <= qty × unit_price
+                 */
+                discount: number;
+                /** @description Kode serial UNIT yang dipindai (<= qty per line, total <= max_serials_per_txn, unik per transaksi setelah normalisasi). Format salah tetap diterima dengan flag SERIAL_INVALID_FORMAT. */
+                serials?: string[];
+            }[];
+            payments: {
+                /**
+                 * @description Maksimal satu CASH
+                 * @enum {string}
+                 */
+                method: "CASH" | "EDC" | "QRIS";
+                /** Format: int64 */
+                amount: number;
+                /** @description Wajib untuk EDC/QRIS (dedupe per (provider, provider_ref)); tidak dipakai untuk CASH */
+                approval_ref?: string;
+            }[];
+            /** @description hex HMAC-SHA256(signing_key, kanonis) */
+            signature: string;
+        };
+        PosSyncRequest: {
+            /**
+             * Format: date-time
+             * @description Jam device saat batch dikirim (untuk clock_skew_ms)
+             */
+            client_time?: string;
+            transactions: components["schemas"]["PosTransaction"][];
+        };
+        PosSyncConflict: {
+            /** @enum {string} */
+            type: "OFFLINE_SALE_PREEMPT" | "STOCK_DISCREPANCY" | "SERIAL_DOUBLE_SALE" | "SERIAL_UNREGISTERED" | "PAYMENT_REF_DUPLICATE";
+            /**
+             * Format: uuid
+             * @description allocation_conflicts.id (tiga jenis pertama)
+             */
+            conflict_id?: string;
+            /** Format: uuid */
+            product_id?: string;
+            /** Format: int64 */
+            qty?: number;
+            /**
+             * Format: uuid
+             * @description Order online yang reservasinya di-preempt
+             */
+            order_id?: string;
+            /** Format: uuid */
+            reservation_id?: string;
+            /** @description Kode serial */
+            code?: string;
+            /** @description SERIAL_DOUBLE_SALE: already_sold, wrong_location, not_sellable_status, not_unit, product_mismatch, sell_failed. SERIAL_UNREGISTERED: not_registered. PAYMENT_REF_DUPLICATE: approval_ref_reused. */
+            reason?: string;
+            method?: string;
+            approval_ref?: string;
+            anomaly_rule?: string;
+        };
+        /** @description result_detail yang disimpan dan di-replay apa adanya. Untuk RETRY dan REJECTED yang tidak disimpan (invalid_signature, identitas rusak, device_seq_reused) hanya reason, message, dan errors. */
+        PosSyncDetail: {
+            /** Format: uuid */
+            server_txn_id?: string;
+            /** Format: uuid */
+            order_id?: string;
+            reason?: string;
+            message?: string;
+            errors?: components["schemas"]["FieldError"][];
+            /** Format: date-time */
+            received_at?: string;
+            /**
+             * Format: date-time
+             * @description Waktu terkoreksi skew yang dipakai ledger
+             */
+            occurred_at?: string;
+            /** Format: int64 */
+            clock_skew_ms?: number;
+            flags?: ("CASHIER_INACTIVE" | "CLOCK_SKEW" | "FUTURE_TIMESTAMP" | "HIGH_DISCOUNT" | "OFFLINE_TOO_LONG" | "OFFLINE_VALUE_LIMIT" | "PRICE_MISMATCH" | "PRICE_STALE" | "SERIAL_INVALID_FORMAT" | "ZERO_TOTAL")[];
+            /** @description Kode yang dipindai tetapi bukan format serial (apa adanya) */
+            invalid_serials?: string[];
+            conflicts?: components["schemas"]["PosSyncConflict"][];
+            serials_sold?: string[];
+            totals?: {
+                /** Format: int64 */
+                subtotal: number;
+                /** Format: int64 */
+                discount: number;
+                /** Format: int64 */
+                total: number;
+                /** Format: int64 */
+                paid: number;
+                /** Format: int64 */
+                change_due: number;
+            };
+        };
+        PosSyncResult: {
+            /** @description Posisi transaksi di request (hasil diurutkan menurut device_seq) */
+            index: number;
+            /**
+             * Format: uuid
+             * @description Nil UUID kalau identitas item tidak bisa dibaca
+             */
+            client_txn_id: string;
+            /** Format: int64 */
+            device_seq: number;
+            /** @enum {string} */
+            status: "ACCEPTED" | "ACCEPTED_WITH_CONFLICT" | "REJECTED" | "DUPLICATE" | "RETRY";
+            /**
+             * @description Hasil tersimpan (untuk DUPLICATE = hasil asli); kosong untuk RETRY
+             * @enum {string}
+             */
+            result: "ACCEPTED" | "ACCEPTED_WITH_CONFLICT" | "REJECTED" | "";
+            detail: components["schemas"]["PosSyncDetail"];
+        };
+        PosSyncResponse: {
+            /** Format: date-time */
+            server_time: string;
+            /** Format: int64 */
+            ack_up_to_seq: number;
+            missing_seqs: number[];
+            missing_seqs_truncated: boolean;
+            results: components["schemas"]["PosSyncResult"][];
+        };
+        ConflictResolveRequest: {
+            /** @enum {string} */
+            resolution: "CUSTOMER_COMPENSATED" | "ORDER_CANCELLED" | "STOCK_RECOUNTED" | "SERIAL_RECORD_CORRECTED" | "FALSE_ALARM" | "OTHER";
+            /** @description Wajib; tanpa karakter kontrol selain \n dan \t */
+            note: string;
         };
         /** @enum {string} */
         CCRunoutLevel: "CRITICAL" | "WARNING" | "INSUFFICIENT_DATA" | "OK";
@@ -3571,6 +4136,495 @@ export interface operations {
             };
             /** @description Error domain (problem+json, lihat field code) */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listPosDevices: {
+        parameters: {
+            query?: {
+                location_id?: string;
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Satu halaman device */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PosDevicePage"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    provisionPosDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PosDeviceCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Device dibuat; simpan token dan signing_key di device (tidak bisa diambil lagi) */
+            201: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PosDeviceProvisioned"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    revokePosDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PosDeviceRevokeRequest"];
+            };
+        };
+        responses: {
+            /** @description Device berstatus REVOKED */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PosDevice"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getPosBootstrap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Data bootstrap */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PosBootstrap"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listPosBootstrapSerials: {
+        parameters: {
+            query?: {
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Satu halaman serial (urut kode) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PosSerialPage"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    postPosHeartbeat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PosHeartbeatRequest"];
+            };
+        };
+        responses: {
+            /** @description Status setelah heartbeat */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PosHeartbeatResponse"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    syncPosTransactions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PosSyncRequest"];
+            };
+        };
+        responses: {
+            /** @description Hasil per transaksi (urut device_seq) dan status ack */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PosSyncResponse"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    resolveAllocationConflict: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConflictResolveRequest"];
+            };
+        };
+        responses: {
+            /** @description Konflik sesudah ditutup */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CCConflictItem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (problem+json, lihat field code) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

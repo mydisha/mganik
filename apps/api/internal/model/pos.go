@@ -32,15 +32,17 @@ const (
 	PosResultRejected             = "REJECTED"
 )
 
+// PosTransaction: CashierID nil hanya untuk transaksi REJECTED (kasir tidak
+// dikenal atau signature tidak sah); CHECK pos_cashier_required_unless_rejected.
 type PosTransaction struct {
-	ID           uuid.UUID `gorm:"primaryKey;type:uuid"`
-	DeviceID     uuid.UUID `gorm:"type:uuid;not null"`
-	ClientTxnID  uuid.UUID `gorm:"type:uuid;not null"`
-	DeviceSeq    int64     `gorm:"not null"`
-	LocationID   uuid.UUID `gorm:"type:uuid;not null"`
-	CashierID    uuid.UUID `gorm:"type:uuid;not null"`
-	OccurredAt   time.Time `gorm:"not null"`
-	ReceivedAt   time.Time `gorm:"not null;default:now()"`
+	ID           uuid.UUID  `gorm:"primaryKey;type:uuid"`
+	DeviceID     uuid.UUID  `gorm:"type:uuid;not null"`
+	ClientTxnID  uuid.UUID  `gorm:"type:uuid;not null"`
+	DeviceSeq    int64      `gorm:"not null"`
+	LocationID   uuid.UUID  `gorm:"type:uuid;not null"`
+	CashierID    *uuid.UUID `gorm:"type:uuid"`
+	OccurredAt   time.Time  `gorm:"not null"`
+	ReceivedAt   time.Time  `gorm:"not null;default:now()"`
 	ClockSkewMs  *int64
 	PayloadHash  []byte     `gorm:"not null"`
 	Result       string     `gorm:"not null"`

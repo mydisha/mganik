@@ -49,6 +49,8 @@ type Config struct {
 	// login konsumen dimatikan. Di production ditolak kecuali
 	// SEED_DEMO_ALLOW_PRODUCTION=true.
 	OTPMockCode string
+	// POS: batas offline, heartbeat, dan batch sync POS (Fase 4).
+	POS POSConfig
 }
 
 // InventoryConfig mengatur reservasi stok, worker latar, dan webhook
@@ -216,6 +218,7 @@ func Load() (Config, error) {
 
 			ClaimRatePerConsumerPerHour: r.positiveInt("PUBLIC_CLAIM_RATE_PER_CONSUMER_HOUR", 10),
 		},
+		POS: r.pos(),
 	}
 	if cfg.Serialization.ClaimReviewThreshold > 100 {
 		errs = append(errs, fmt.Errorf("CLAIM_REVIEW_THRESHOLD harus 1-100 (sekarang %d)", cfg.Serialization.ClaimReviewThreshold))

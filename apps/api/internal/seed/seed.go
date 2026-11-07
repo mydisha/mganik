@@ -2,6 +2,7 @@ package seed
 
 import (
 	"context"
+	"crypto/hmac"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,8 +13,10 @@ import (
 	"gorm.io/gorm/clause"
 
 	"mganik/api/internal/clock"
+	"mganik/api/internal/config"
 	"mganik/api/internal/domain"
 	"mganik/api/internal/model"
+	"mganik/api/internal/pii"
 )
 
 // ErrDisabled dikembalikan kalau seed dipanggil tanpa SEED_DEMO=true.
@@ -33,6 +36,10 @@ type Options struct {
 	// Clock menentukan "hari ini" untuk riwayat penjualan demo (default jam
 	// sistem). Test memakai clock.Fake.
 	Clock clock.Clock
+	// PIIEncKey = PII_ENC_KEY untuk mengenkripsi signing key device POS demo.
+	// Kosong = config.DemoPIIEncKey (sama dengan fallback router di luar
+	// production; seed demo ditolak di production tanpa izin eksplisit).
+	PIIEncKey []byte
 }
 
 // Result merangkum jumlah baris baru per tabel (0 semua saat seed diulang).
@@ -41,6 +48,9 @@ type Result struct {
 	// ClaimHashesUpdated: unit demo yang claim_secret_hash-nya diganti karena
 	// CLAIM_PEPPER berbeda dari seed sebelumnya.
 	ClaimHashesUpdated int64
+	// SigningKeysUpdated: device demo yang signing_key_enc-nya ditulis
+	// (pertama kali, atau karena PII_ENC_KEY berubah).
+	SigningKeysUpdated int64
 }
 
 // Total jumlah semua baris baru.
@@ -245,8 +255,10 @@ func (s *seeder) locations() error {
 	central.OnlineFulfillmentEnabled = true
 	hub := loc(HubSurabayaCode, "Hub Surabaya", "HUB", company, "35.78", -7.2756, 112.7426, "Asia/Jakarta")
 	hub.OnlineFulfillmentEnabled = true
-	// Toko punya POS: status sync awal OFFLINE sampai device mengirim heartbeat
-	// pertama (ATP online toko = 0 selama OFFLINE).
+	// Toko di-seed OFFLINE: ATP online toko = 0 sampai device mengirim heartbeat
+	// dengan outbox kosong. Toko Bandung belum punya device POS, jadi saat worker
+	// berjalan, job heartbeat memindahkannya ke NOT_TRACKED (lokasi tanpa device
+	// ACTIVE tidak dilacak). Test memakai status awal OFFLINE ini sebagai skenario.
 	jaksel := loc(StoreJakselCode, "Toko Jakarta Selatan", "OWN_STORE", company, "31.71", -6.2441, 106.8003, "Asia/Jakarta")
 	jaksel.OnlineFulfillmentEnabled, jaksel.SyncState = true, model.SyncOffline
 	bandung := loc(StoreBandungCode, "Toko Bandung", "OWN_STORE", company, "32.73", -6.9039, 107.6186, "Asia/Jakarta")
@@ -546,9 +558,48 @@ func (s *seeder) inventory() error {
 // ------------------------------------------------------------------ POS
 
 func (s *seeder) posDevice() error {
-	return insert(s, []model.PosDevice{{
+	if err := insert(s, []model.PosDevice{{
 		ID: PosDeviceID(), LocationID: LocationID(StoreJakselCode), Name: "Kasir 1 Toko Jakarta Selatan",
 		TokenHash: DemoDeviceTokenHash(), Status: "ACTIVE",
 		ProvisionedBy: ptr(UserID("kepala.jaksel@mganik.test")),
-	}})
+	}}); err != nil {
+		return err
+	}
+	return s.posDeviceSigningKey()
+}
+
+// posDeviceSigningKey memastikan signing_key_enc device demo terbuka dengan
+// PII_ENC_KEY aktif menjadi DemoDeviceSigningKey. Ciphertext AES-GCM memakai
+// nonce acak, jadi perbandingan dilakukan setelah dekripsi: kolom hanya
+// ditulis ulang kalau masih NULL, dienkripsi dengan kunci lain, atau isinya
+// berbeda (seed ulang dengan kunci aktif selalu menghasilkan nilai cocok).
+func (s *seeder) posDeviceSigningKey() error {
+	master := s.opts.PIIEncKey
+	if len(master) == 0 {
+		master = []byte(config.DemoPIIEncKey)
+	}
+	c, err := pii.NewSigningKeyCipher(master)
+	if err != nil {
+		return fmt.Errorf("seed signing key device: %w", err)
+	}
+	id := PosDeviceID()
+	var rows []struct{ SigningKeyEnc []byte }
+	if err := s.tx.Raw(`SELECT signing_key_enc FROM pos_devices WHERE id = ? FOR UPDATE`, id).Scan(&rows).Error; err != nil {
+		return fmt.Errorf("membaca device demo: %w", err)
+	}
+	if len(rows) == 1 && rows[0].SigningKeyEnc != nil {
+		if got, err := c.Open(rows[0].SigningKeyEnc, id[:]); err == nil && hmac.Equal(got, DemoDeviceSigningKey()) {
+			return nil
+		}
+	}
+	enc, err := c.Seal(DemoDeviceSigningKey(), id[:])
+	if err != nil {
+		return err
+	}
+	res := s.tx.Exec(`UPDATE pos_devices SET signing_key_enc = ?::bytea, version = version + 1, updated_at = now() WHERE id = ?`, enc, id)
+	if res.Error != nil {
+		return fmt.Errorf("menyimpan signing key device demo: %w", res.Error)
+	}
+	s.res.SigningKeysUpdated += res.RowsAffected
+	return nil
 }

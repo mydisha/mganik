@@ -35,5 +35,6 @@ func PrintDemo(w io.Writer) error {
 	p("\nPassword semua akun\tnilai SEED_DEMO_PASSWORD saat seed pertama kali jalan\n")
 	p("PIN POS kasir\t%s\n", DemoCashierPIN)
 	p("Token device POS (%s)\t%s\n", StoreJakselCode, DemoDeviceToken())
+	p("Signing key device POS (%s, hex)\t%s\n", StoreJakselCode, DemoDeviceSigningKeyHex())
 	return tw.Flush()
 }

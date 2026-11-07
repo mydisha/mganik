@@ -48,7 +48,8 @@ func New(d Deps) (*gin.Engine, error) {
 		middleware.AccessLog(d.Log),
 		middleware.Recovery(d.Log),
 		middleware.SecurityHeaders(d.Config.IsProduction()),
-		middleware.BodyLimit(d.Config.MaxBodyBytes),
+		// POST /pos/sync punya batas sendiri (POS_SYNC_MAX_BODY_BYTES).
+		middleware.BodyLimitByPath(d.Config.MaxBodyBytes, posBodyLimits(d.Config)),
 	)
 	r.NoRoute(func(c *gin.Context) { apperror.Write(c, d.Log, apperror.ErrNotFound) })
 	r.NoMethod(func(c *gin.Context) { apperror.Write(c, d.Log, apperror.ErrMethodNotAllowed) })

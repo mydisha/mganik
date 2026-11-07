@@ -139,6 +139,7 @@ func runSeed(ctx context.Context, cfg config.Config, db *gorm.DB, log *slog.Logg
 		Pepper:       cfg.ClaimPepper,
 		DemoPassword: cfg.Seed.DemoPassword,
 		Log:          log,
+		PIIEncKey:    cfg.PIIEncKey,
 	})
 	return err
 }
@@ -153,6 +154,11 @@ func serve(ctx context.Context, cfg config.Config, db *gorm.DB, log *slog.Logger
 	// Stop menunggu putaran yang sedang berjalan selesai sebelum DB ditutup.
 	if cfg.Inventory.RunWorker {
 		w := worker.New(worker.Deps{DB: db, Log: log, Config: cfg.Inventory})
+		posSvc, err := router.NewPosService(router.Deps{Config: cfg, DB: db, Log: log})
+		if err != nil {
+			return err
+		}
+		worker.RegisterPOSJobs(w, posSvc)
 		w.Start(ctx)
 		defer w.Stop()
 	}
