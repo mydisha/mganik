@@ -27,6 +27,46 @@ type Config struct {
 	MaxBodyBytes   int64
 	ShutdownGrace  time.Duration
 	Database       DatabaseConfig
+	// ClaimPepper adalah kunci HMAC untuk serial_units.claim_secret_hash
+	// (HMAC-SHA256(pepper, unit_id ‖ PIN)). Disimpan di env/secret manager,
+	// tidak pernah di DB.
+	ClaimPepper []byte
+	Seed        SeedConfig
+}
+
+// SeedConfig mengatur data demo (`api seed`, `api migrate --seed`).
+type SeedConfig struct {
+	// Demo harus true (SEED_DEMO=true) supaya seed mau berjalan.
+	Demo bool
+	// DemoPassword adalah password semua akun demo.
+	DemoPassword string
+	// AllowProduction (SEED_DEMO_ALLOW_PRODUCTION=true) mengizinkan data dan
+	// kredensial demo publik saat APP_ENV=production. Hanya untuk stack demo
+	// lokal (compose); production sungguhan tidak pernah menyalakannya.
+	AllowProduction bool
+}
+
+const (
+	// MinClaimPepperBytes adalah panjang minimum CLAIM_PEPPER di production.
+	MinClaimPepperBytes = 32
+	// MinDemoPasswordLen adalah panjang minimum SEED_DEMO_PASSWORD.
+	MinDemoPasswordLen = 12
+
+	// DemoClaimPepper adalah pepper publik untuk stack demo. Nilai yang sama
+	// dipakai default compose.yaml, Makefile, dan .env.example (dijaga test),
+	// sehingga `make api` dan stack compose di volume yang sama memverifikasi
+	// PIN dengan pepper yang sama. Di production ditolak kecuali
+	// SEED_DEMO_ALLOW_PRODUCTION=true.
+	DemoClaimPepper = "demo-claim-pepper-ganti-sebelum-dipakai-sungguhan"
+	// DefaultDemoPassword dipakai kalau SEED_DEMO_PASSWORD kosong (dicatat di
+	// README). Aturan production sama dengan DemoClaimPepper.
+	DefaultDemoPassword = "mganik-demo-2026"
+)
+
+// DemoOverrideActive: production berjalan dengan izin data/kredensial demo.
+// serve dan migrate menulis WARN saat start kalau ini true.
+func (c Config) DemoOverrideActive() bool {
+	return c.IsProduction() && c.Seed.AllowProduction
 }
 
 type DatabaseConfig struct {
@@ -59,6 +99,43 @@ func Load() (Config, error) {
 			ConnMaxLifetime: r.duration("DB_CONN_MAX_LIFETIME", 30*time.Minute),
 			ConnectTimeout:  r.duration("DB_CONNECT_TIMEOUT", 10*time.Second),
 		},
+		Seed: SeedConfig{
+			Demo:            r.boolean("SEED_DEMO", false),
+			DemoPassword:    r.str("SEED_DEMO_PASSWORD", DefaultDemoPassword),
+			AllowProduction: r.boolean("SEED_DEMO_ALLOW_PRODUCTION", false),
+		},
+	}
+
+	// CLAIM_PEPPER tidak di-trim: spasi di dalam secret tetap bagian dari kunci.
+	pepper, hasPepper := os.LookupEnv("CLAIM_PEPPER")
+	switch {
+	case hasPepper && pepper != "":
+		cfg.ClaimPepper = []byte(pepper)
+	case cfg.AppEnv != EnvProduction:
+		cfg.ClaimPepper = []byte(DemoClaimPepper)
+	}
+	if len(cfg.Seed.DemoPassword) < MinDemoPasswordLen {
+		errs = append(errs, fmt.Errorf("SEED_DEMO_PASSWORD minimal %d karakter", MinDemoPasswordLen))
+	}
+	if cfg.AppEnv == EnvProduction {
+		if len(cfg.ClaimPepper) < MinClaimPepperBytes {
+			errs = append(errs, fmt.Errorf("CLAIM_PEPPER wajib diisi minimal %d byte di production (sekarang %d byte)",
+				MinClaimPepperBytes, len(cfg.ClaimPepper)))
+		}
+		// Nilai demo ada di repo publik: di production hanya boleh dengan izin
+		// eksplisit (stack demo lokal).
+		if !cfg.Seed.AllowProduction {
+			const hint = "set SEED_DEMO_ALLOW_PRODUCTION=true hanya untuk stack demo lokal"
+			if string(cfg.ClaimPepper) == DemoClaimPepper {
+				errs = append(errs, fmt.Errorf("CLAIM_PEPPER memakai nilai demo publik di production (%s)", hint))
+			}
+			if cfg.Seed.Demo {
+				errs = append(errs, fmt.Errorf("SEED_DEMO=true ditolak di production (%s)", hint))
+				if cfg.Seed.DemoPassword == DefaultDemoPassword {
+					errs = append(errs, fmt.Errorf("SEED_DEMO_PASSWORD memakai password demo default di production (%s)", hint))
+				}
+			}
+		}
 	}
 
 	switch cfg.AppEnv {
@@ -123,6 +200,19 @@ func (r reader) positiveInt(key string, def int) int {
 		return def
 	}
 	return n
+}
+
+func (r reader) boolean(key string, def bool) bool {
+	raw := r.str(key, "")
+	if raw == "" {
+		return def
+	}
+	b, err := strconv.ParseBool(raw)
+	if err != nil {
+		*r.errs = append(*r.errs, fmt.Errorf("%s harus true atau false (sekarang %q)", key, raw))
+		return def
+	}
+	return b
 }
 
 func (r reader) duration(key string, def time.Duration) time.Duration {

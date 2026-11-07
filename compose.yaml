@@ -21,6 +21,14 @@ x-api-env: &api-env
   LOG_FORMAT: json
   # Hanya nginx (container web) yang berdiri di depan api.
   TRUSTED_PROXIES: ${TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+  # Kunci HMAC hash PIN klaim (min. 32 byte di production). Default ini hanya
+  # untuk demo lokal; ganti lewat .env sebelum stack dibuka ke jaringan lain.
+  CLAIM_PEPPER: ${CLAIM_PEPPER:-demo-claim-pepper-ganti-sebelum-dipakai-sungguhan}
+  # Compose ini adalah stack demo lokal: APP_ENV=production tetapi memakai pepper
+  # dan akun demo yang nilainya publik di repo. Config menolak nilai demo di
+  # production kecuali izin ini true; api dan migrate menulis WARN saat start.
+  # Set false (dan isi secret sendiri) untuk deployment sungguhan.
+  SEED_DEMO_ALLOW_PRODUCTION: ${SEED_DEMO_ALLOW_PRODUCTION:-true}
 
 services:
   db:
@@ -42,17 +50,24 @@ services:
       retries: 20
 
   migrate:
-    image: mganik-api:local
+    # Nama image mengikuti nama project (default "mganik"), jadi
+    # `docker compose -p lain up --build` tidak me-retag image stack utama.
+    # migrate dan api berbagi satu image.
+    image: ${COMPOSE_PROJECT_NAME}-api:local
     build: *api-build
-    command: ["migrate"]
-    environment: *api-env
+    # Migrasi lalu isi data demo (idempotent). SEED_DEMO=false = migrasi saja.
+    command: ["migrate", "--seed"]
+    environment:
+      <<: *api-env
+      SEED_DEMO: ${SEED_DEMO:-true}
+      SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:-mganik-demo-2026}
     depends_on:
       db:
         condition: service_healthy
     restart: "no"
 
   api:
-    image: mganik-api:local
+    image: ${COMPOSE_PROJECT_NAME}-api:local
     build: *api-build
     command: ["serve"]
     environment: *api-env
@@ -65,7 +80,7 @@ services:
     stop_grace_period: 25s
 
   web:
-    image: mganik-web:local
+    image: ${COMPOSE_PROJECT_NAME}-web:local
     build:
       context: .
       dockerfile: apps/web/Dockerfile

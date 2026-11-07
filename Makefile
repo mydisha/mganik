@@ -1,12 +1,24 @@
 # Pintu tunggal tugas harian. Jalankan `make` untuk daftar perintah.
 
+# .env (opsional) dibaca sama seperti compose, supaya `make migrate/seed/api`
+# dan stack compose memakai port, password DB, dan secret demo yang sama.
+-include .env
+
 COMPOSE ?= docker compose
 DB_PORT ?= 55432
 API_PORT ?= 8089
-DEV_DATABASE_URL ?= postgres://mganik:mganik@localhost:$(DB_PORT)/mganik?sslmode=disable
+POSTGRES_PASSWORD ?= mganik
+DEV_DATABASE_URL ?= postgres://mganik:$(POSTGRES_PASSWORD)@localhost:$(DB_PORT)/mganik?sslmode=disable
+
+# Default sama persis dengan compose.yaml dan konstanta Go (dijaga test
+# config.TestDemoDefaultsMatchRepoFiles): hash PIN yang dibuat seed compose
+# terverifikasi oleh `make api` di volume yang sama, dan sebaliknya.
+CLAIM_PEPPER ?= demo-claim-pepper-ganti-sebelum-dipakai-sungguhan
+SEED_DEMO_PASSWORD ?= mganik-demo-2026
+export CLAIM_PEPPER SEED_DEMO_PASSWORD
 
 .DEFAULT_GOAL := help
-.PHONY: help up down logs ps clean db migrate api web test test-api test-web lint gen hooks
+.PHONY: help up down logs ps clean db migrate seed demo-data api web test test-api test-web lint gen hooks
 
 help: ## daftar perintah
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-10s %s\n", $$1, $$2}'
@@ -32,6 +44,12 @@ db: ## hanya Postgres, untuk development lokal
 
 migrate: ## jalankan migrasi ke DB development
 	cd apps/api && DATABASE_URL='$(DEV_DATABASE_URL)' go run ./cmd/api migrate
+
+seed: ## isi data demo ke DB development (idempotent)
+	cd apps/api && DATABASE_URL='$(DEV_DATABASE_URL)' SEED_DEMO=true go run ./cmd/api seed
+
+demo-data: ## cetak kode serial, PIN klaim, akun, dan token POS demo
+	cd apps/api && go run ./cmd/api seed --print-demo
 
 api: ## backend dengan hot reload (air) di port API_PORT; stack compose harus mati
 	cd apps/api && export DATABASE_URL='$(DEV_DATABASE_URL)' HTTP_ADDR=':$(API_PORT)' LOG_FORMAT=text APP_ENV=development; \

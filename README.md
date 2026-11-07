@@ -17,13 +17,55 @@ Satu perintah itu menjalankan seluruh stack secara berurutan:
 | Service | Isi | Alamat |
 |---|---|---|
 | `db` | PostgreSQL 17 | `localhost:55432` (user/db `mganik`) |
-| `migrate` | Menerapkan migrasi lalu keluar | — |
+| `migrate` | Menerapkan migrasi, mengisi data demo, lalu keluar | — |
 | `api` | Backend Go (Gin) | http://localhost:8089 |
 | `web` | Build React disajikan nginx, mem-proxy `/api` ke `api` | http://localhost:8088 |
 
 Halaman: `/console` (Command Center), `/pos` (kasir), `/v/<kode>` (verifikasi konsumen).
 Port bisa diubah lewat `.env` (salin dari `.env.example`). `make up` menjalankan hal yang
 sama di background; `make down` mematikannya, `make clean` juga menghapus data database.
+
+## Data demo
+
+Service `migrate` menjalankan `api migrate --seed`: migrasi lalu data demo. Seed idempotent
+(aman dijalankan ulang) dan hanya jalan kalau `SEED_DEMO=true` (default di compose; set
+`SEED_DEMO=false` di `.env` untuk migrasi saja). Isinya: 2 SKU, gudang pusat Bekasi, hub
+Surabaya, toko Jakarta Selatan dan Bandung, gudang Distributor Jatim dan Sulsel beserta
+wilayah resminya, 1 batch berisi 1 palet → 4 karton → 48 unit serial, saldo stok + ledger,
+harga POS dan D2C, satu akun per role, dan 1 device POS di toko Jakarta Selatan.
+
+| Akun | Role | Scope lokasi |
+|---|---|---|
+| `admin@mganik.test` | ADMIN | semua |
+| `ops@mganik.test` | OPS_MANAGER | semua |
+| `produksi@mganik.test` | PRODUCTION_OPERATOR | Gudang Pusat |
+| `gudang@mganik.test` | WAREHOUSE_STAFF | Gudang Pusat, Hub Surabaya |
+| `kepala.jaksel@mganik.test` | STORE_MANAGER | Toko Jakarta Selatan |
+| `kasir.jaksel@mganik.test` | CASHIER | Toko Jakarta Selatan |
+| `marketing@mganik.test` | MARKETING_ANALYST | semua |
+
+Password semua akun: nilai `SEED_DEMO_PASSWORD`, default **`mganik-demo-2026`**. Ganti di
+`.env` sebelum seed pertama kalau stack dibuka ke jaringan lain.
+
+Compose adalah stack demo lokal: walau `APP_ENV=production`, ia memakai pepper dan akun
+demo yang nilainya publik di repo, lewat izin `SEED_DEMO_ALLOW_PRODUCTION=true` (api dan
+migrate menulis WARN saat start). Untuk deployment sungguhan set izin itu `false`; config
+lalu menolak `SEED_DEMO=true`, `CLAIM_PEPPER` demo, dan password demo default. `make
+migrate/seed/api` membaca `.env` yang sama dan memakai default `CLAIM_PEPPER` yang sama
+dengan compose, jadi PIN demo tetap terverifikasi di kedua cara menjalankan. Kalau pepper
+diganti, `api seed` berikutnya memperbarui hash PIN fixture demo.
+
+Reset data demo: `make clean` lalu `make up` (menghapus volume database proyek ini). Jangan
+memakai goose down: migrasi data lookup sengaja gagal turun selama masih ada data yang
+mereferensikannya.
+
+Kode serial, PIN klaim, PIN POS kasir, dan token device POS adalah fixture deterministik
+(bukan rahasia) dan tidak pernah ditulis ke log. Untuk melihatnya:
+
+```bash
+docker compose run --rm --no-deps migrate seed --print-demo   # lewat image
+make demo-data                                                # dari source (butuh Go)
+```
 
 ## Development
 
@@ -33,13 +75,14 @@ Prasyarat tambahan: Go 1.27, Node 22.12+, pnpm 12, opsional [air](https://github
 make hooks     # sekali per clone
 make db        # Postgres saja
 make migrate
+make seed      # data demo (idempotent)
 make api       # backend di :8089 (matikan stack compose dulu)
 make web       # Vite di :5173, proxy ke :8089
 ```
 
 | Perintah | Fungsi |
 |---|---|
-| `make test` | Test Go (`-race`) dan frontend |
+| `make test` | Test Go (`-race`) dan frontend. Test DB memakai Postgres 17 via testcontainers (butuh Docker), atau server sendiri lewat `TEST_DATABASE_URL` |
 | `make lint` | gofmt, go vet, typecheck |
 | `make gen` | Tipe TypeScript dari `packages/contracts/openapi.yaml` |
 

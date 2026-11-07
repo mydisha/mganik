@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 
@@ -20,18 +21,9 @@ func Migrate(ctx context.Context, db *gorm.DB, log *slog.Logger) error {
 		return fmt.Errorf("mengambil pool database: %w", err)
 	}
 
-	locker, err := lock.NewPostgresSessionLocker()
+	provider, err := NewMigrationProvider(sqlDB)
 	if err != nil {
-		return fmt.Errorf("membuat session locker: %w", err)
-	}
-
-	// Provider tidak di-Close karena *sql.DB dipakai bersama GORM; Close milik
-	// goose akan menutup pool itu.
-	provider, err := goose.NewProvider(goose.DialectPostgres, sqlDB, migrations.FS,
-		goose.WithSessionLocker(locker),
-	)
-	if err != nil {
-		return fmt.Errorf("menyiapkan migrasi: %w", err)
+		return err
 	}
 
 	results, err := provider.Up(ctx)
@@ -48,4 +40,23 @@ func Migrate(ctx context.Context, db *gorm.DB, log *slog.Logger) error {
 	}
 	log.Info("skema database terbaru", "versi", version, "diterapkan", len(results))
 	return nil
+}
+
+// NewMigrationProvider membuat provider goose atas migrasi yang di-embed,
+// dengan session lock Postgres. Dipakai Migrate dan test (Down/Up).
+//
+// Provider sengaja tidak di-Close oleh pemanggil yang berbagi *sql.DB dengan
+// GORM: Close milik goose akan menutup pool itu.
+func NewMigrationProvider(sqlDB *sql.DB) (*goose.Provider, error) {
+	locker, err := lock.NewPostgresSessionLocker()
+	if err != nil {
+		return nil, fmt.Errorf("membuat session locker: %w", err)
+	}
+	provider, err := goose.NewProvider(goose.DialectPostgres, sqlDB, migrations.FS,
+		goose.WithSessionLocker(locker),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("menyiapkan migrasi: %w", err)
+	}
+	return provider, nil
 }

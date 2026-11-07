@@ -4,7 +4,10 @@ package database
 import (
 	"context"
 	"fmt"
+	"io"
+	stdlog "log"
 	"log/slog"
+	"os"
 	"time"
 
 	"gorm.io/driver/postgres"
@@ -23,7 +26,7 @@ func Open(ctx context.Context, cfg config.DatabaseConfig, log *slog.Logger) (*go
 		SkipDefaultTransaction: true,
 		TranslateError:         true,
 		NowFunc:                func() time.Time { return time.Now().UTC() },
-		Logger:                 logger.Default.LogMode(logger.Warn),
+		Logger:                 NewGormLogger(os.Stdout),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("membuka koneksi database: %w", err)
@@ -52,6 +55,20 @@ func Open(ctx context.Context, cfg config.DatabaseConfig, log *slog.Logger) (*go
 			log.Debug("menunggu database", "error", err)
 		}
 	}
+}
+
+// NewGormLogger membuat logger GORM untuk slow query dan error SQL.
+// ParameterizedQueries: log hanya memuat SQL dengan placeholder, tanpa nilai
+// parameter, sehingga hash password, claim hash, token, dan PII tidak pernah
+// masuk log.
+func NewGormLogger(w io.Writer) logger.Interface {
+	return logger.New(stdlog.New(w, "", stdlog.LstdFlags), logger.Config{
+		SlowThreshold:             200 * time.Millisecond,
+		LogLevel:                  logger.Warn,
+		IgnoreRecordNotFoundError: true,
+		ParameterizedQueries:      true,
+		Colorful:                  false,
+	})
 }
 
 // Close menutup pool koneksi.
