@@ -18,7 +18,7 @@ import (
 
 // ErrRateLimited: terlalu banyak request dari satu IP (429).
 var ErrRateLimited = apperror.New(http.StatusTooManyRequests, "rate_limited",
-	"Terlalu banyak permintaan", "Terlalu banyak permintaan dari jaringan ini. Coba lagi beberapa saat lagi.")
+	"Terlalu banyak permintaan", "Terlalu banyak permintaan dari jaringan ini. Tunggu sebentar, lalu coba lagi.")
 
 // publicRateMaxKeys membatasi memori limiter. Kalau penuh setelah pembersihan,
 // IP baru ditolak (fail closed) alih-alih membiarkan memori tumbuh tanpa batas.

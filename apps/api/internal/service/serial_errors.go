@@ -15,84 +15,87 @@ import (
 // bahasa Inggris), detail berbahasa Indonesia.
 var (
 	ErrSerialInvalidTransition = apperror.New(http.StatusConflict, "invalid_transition",
-		"Transisi status tidak diizinkan", "Status serial tidak bisa dipindah ke status tujuan.")
+		"Status tidak sesuai", "Aksi ini tidak berlaku untuk status serial saat ini.")
 	ErrSerialNotFound = apperror.New(http.StatusNotFound, "serial_not_found",
-		"Serial tidak ditemukan", "Kode serial tidak terdaftar.")
+		"Serial tidak ditemukan", "Kode serial ini tidak terdaftar. Periksa kodenya atau pindai ulang labelnya.")
 	ErrSerialWrongLocation = apperror.New(http.StatusConflict, "serial_wrong_location",
-		"Serial di lokasi lain", "Serial tidak berada di lokasi yang diminta.")
+		"Serial di lokasi lain", "Serial ini tercatat di lokasi lain, bukan di lokasi yang dipilih.")
 	ErrSerialPackedInParent = apperror.New(http.StatusConflict, "packed_in_parent",
-		"Serial masih di dalam kemasan induk", "Kirim/terima kemasan induknya, atau bongkar dulu kemasan induknya.")
+		"Masih di dalam kemasan", "Serial ini masih di dalam kemasan lain (inner box, karton, atau palet). Proses kemasan induknya, atau bongkar kemasan itu dulu.")
 	ErrSerialLocationNotFound = apperror.New(http.StatusUnprocessableEntity, "location_not_found",
-		"Lokasi tidak ditemukan", "Lokasi tidak ada atau sudah diarsipkan.")
+		"Lokasi tidak ditemukan", "Lokasi ini tidak ada atau sudah diarsipkan.")
 	ErrSerialLocationNotOwn = apperror.New(http.StatusUnprocessableEntity, "location_not_own",
-		"Lokasi bukan milik sendiri", "Penerimaan hasil produksi hanya ke lokasi fisik milik sendiri.")
+		"Bukan lokasi sendiri", "Hasil produksi hanya bisa diterima di gudang, hub, atau toko milik sendiri.")
 	ErrSerialLocationVirtual = apperror.New(http.StatusUnprocessableEntity, "location_virtual",
-		"Lokasi virtual", "Lokasi virtual tidak bisa menjadi asal atau tujuan.")
+		"Lokasi virtual", "Lokasi virtual (misalnya dalam perjalanan) tidak bisa dipilih sebagai asal atau tujuan.")
 	ErrSerialPartyNotFound = apperror.New(http.StatusUnprocessableEntity, "party_not_found",
-		"Mitra tidak ditemukan", "Party tujuan tidak ada atau sudah diarsipkan.")
+		"Mitra tidak ditemukan", "Mitra tujuan tidak ada atau sudah diarsipkan.")
 	ErrShipmentToPartyRequired = apperror.New(http.StatusUnprocessableEntity, "to_party_required",
-		"Mitra tujuan wajib diisi", "Lokasi tujuan tidak terikat ke party; isi to_party_id.")
+		"Mitra tujuan wajib diisi", "Lokasi tujuan belum terhubung ke mitra mana pun. Pilih mitra tujuannya.")
 	ErrShipmentSameLocation = apperror.New(http.StatusUnprocessableEntity, "same_location",
-		"Lokasi asal sama dengan tujuan", "Lokasi asal dan tujuan shipment harus berbeda.")
+		"Asal sama dengan tujuan", "Pilih lokasi tujuan yang berbeda dari lokasi asal pengiriman.")
 	ErrSerialProductNotFound = apperror.New(http.StatusUnprocessableEntity, "product_not_found",
-		"Produk tidak ditemukan", "Produk tidak ada atau sudah diarsipkan.")
+		"Produk tidak ditemukan", "Produk ini tidak ada atau sudah diarsipkan.")
 	ErrSerialLevelNotFound = apperror.New(http.StatusUnprocessableEntity, "level_not_found",
-		"Level kemasan tidak dikenal", "Level kemasan tidak ada di packaging_levels.")
+		"Level kemasan tidak dikenal", "Level kemasan harus salah satu dari unit, inner box, karton, atau palet.")
 	ErrSerialProductMismatch = apperror.New(http.StatusUnprocessableEntity, "product_mismatch",
-		"Produk tidak cocok", "Produk serial tidak sama dengan produk tujuan.")
+		"Produk tidak cocok", "Produk pada serial yang ditandai berbeda dengan produk batch atau kemasan tujuan.")
 	ErrSerialBatchNotFound = apperror.New(http.StatusNotFound, "batch_not_found",
-		"Batch tidak ditemukan", "Batch produksi tidak ada.")
+		"Batch tidak ditemukan", "Batch produksi yang dipilih tidak ada.")
 	ErrSerialBatchNotActive = apperror.New(http.StatusConflict, "batch_not_active",
-		"Batch tidak aktif", "Batch sedang ditahan atau sudah di-recall.")
+		"Batch tidak aktif", "Batch ini sedang ditahan atau sudah ditarik (recall), jadi tidak bisa dipakai.")
 	ErrSerialLevelMismatch = apperror.New(http.StatusUnprocessableEntity, "level_mismatch",
-		"Level kemasan tidak sesuai", "Induk harus berlevel lebih tinggi dan sesuai spesifikasi kemasan produk.")
+		"Level kemasan tidak sesuai", "Kemasan induk harus berlevel lebih tinggi dari isinya dan sesuai spesifikasi kemasan produk.")
 	ErrSerialMixedLevels = apperror.New(http.StatusUnprocessableEntity, "mixed_levels",
-		"Level anak berbeda-beda", "Semua anak dalam satu agregasi harus berlevel sama.")
+		"Level isi berbeda", "Semua isi dalam satu kemasan harus berlevel sama, misalnya semuanya unit atau semuanya karton.")
 	ErrSerialPackagingSpecMissing = apperror.New(http.StatusUnprocessableEntity, "packaging_spec_missing",
-		"Spesifikasi kemasan tidak ada", "Produk belum punya spesifikasi kemasan untuk level ini.")
+		"Spesifikasi kemasan belum ada", "Produk ini belum punya spesifikasi kemasan untuk level tersebut. Tambahkan dulu di data katalog.")
 	ErrSerialCapacityExceeded = apperror.New(http.StatusConflict, "capacity_exceeded",
-		"Kapasitas kemasan terlampaui", "Jumlah anak melebihi kapasitas kemasan induk.")
+		"Kemasan penuh", "Jumlah isi melebihi kapasitas kemasan induk.")
 	ErrSerialMixedBatch = apperror.New(http.StatusUnprocessableEntity, "mixed_batch_not_allowed",
-		"Batch tidak boleh dicampur", "Spesifikasi kemasan produk ini tidak mengizinkan campuran batch.")
+		"Batch tidak boleh dicampur", "Spesifikasi kemasan produk ini tidak mengizinkan isi dari batch berbeda dalam satu kemasan.")
 	ErrSerialAlreadyPacked = apperror.New(http.StatusConflict, "already_packed",
-		"Serial sudah di kemasan lain", "Serial sudah punya induk; bongkar dulu sebelum dipindah.")
+		"Sudah di kemasan lain", "Serial ini sudah berada di kemasan lain. Bongkar kemasan itu dulu sebelum memindahkannya.")
 	ErrSerialCycleDetected = apperror.New(http.StatusUnprocessableEntity, "cycle_detected",
-		"Siklus kemasan", "Serial tidak boleh menjadi induk dari dirinya sendiri atau leluhurnya.")
+		"Susunan kemasan tidak valid", "Kemasan tidak bisa dimasukkan ke dirinya sendiri atau ke kemasan yang ada di dalamnya.")
 	ErrSerialStatusMismatch = apperror.New(http.StatusConflict, "status_mismatch",
-		"Status serial tidak sesuai", "Serial harus berstatus sama dan di lokasi yang sama untuk dikemas atau dibongkar.")
+		"Status serial tidak sesuai", "Untuk dikemas atau dibongkar, kemasan dan isinya harus berstatus sama dan berada di lokasi yang sama.")
 	ErrSerialEmptyContainer = apperror.New(http.StatusUnprocessableEntity, "empty_container",
-		"Kemasan kosong", "Kemasan tanpa unit tidak bisa dikirim.")
+		"Kemasan kosong", "Kemasan ini tidak berisi unit, jadi tidak bisa dikirim.")
 	ErrShipmentNotFound = apperror.New(http.StatusNotFound, "shipment_not_found",
-		"Shipment tidak ditemukan", "Shipment tidak ada.")
+		"Pengiriman tidak ditemukan", "Pengiriman yang diminta tidak ada.")
 	ErrShipmentNotShipped = apperror.New(http.StatusConflict, "shipment_not_shipped",
-		"Shipment tidak dalam perjalanan", "Hanya shipment berstatus SHIPPED yang bisa diterima.")
+		"Tidak bisa diterima", "Hanya pengiriman yang sedang dalam perjalanan yang bisa diterima.")
 	ErrSerialConcurrentChange = apperror.New(http.StatusConflict, "concurrent_change",
-		"Data berubah", "Serial berubah oleh proses lain saat diproses. Coba lagi.")
+		"Data berubah", "Serial ini diubah oleh proses lain pada saat yang sama. Muat ulang data, lalu coba lagi.")
 	ErrSerialDuplicateCode = apperror.New(http.StatusUnprocessableEntity, "duplicate_code",
-		"Kode duplikat", "Kode yang sama muncul lebih dari sekali dalam satu permintaan.")
+		"Kode ganda", "Ada kode yang dimasukkan lebih dari sekali. Hapus kode gandanya, lalu kirim lagi.")
 	ErrSerialNotUnit = apperror.New(http.StatusUnprocessableEntity, "serial_not_unit",
-		"Bukan serial unit", "Hanya serial level UNIT yang bisa dijual; bongkar karton/palet terlebih dulu.")
+		"Bukan serial unit", "Hanya serial unit yang bisa dijual. Bongkar kemasannya dulu (inner box, karton, atau palet), lalu pindai unitnya.")
 	ErrShipmentToPartyMismatch = apperror.New(http.StatusUnprocessableEntity, "to_party_mismatch",
-		"Mitra tujuan tidak cocok", "Tujuan adalah lokasi sendiri; to_party_id harus pemilik lokasi itu.")
+		"Mitra tujuan tidak cocok", "Lokasi tujuan milik sendiri, jadi mitra tujuan harus pemilik lokasi itu. Kosongkan mitra tujuan agar terisi otomatis.")
+	// Konsumen. Pesan klaim tidak menyebut status internal unit.
 	ErrClaimPreviouslyRejected = apperror.New(http.StatusForbidden, "claim_previously_rejected",
-		"Klaim pernah ditolak", "Klaim akun ini untuk produk ini pernah ditolak. Hubungi layanan pelanggan.")
+		"Klaim tidak bisa diulang", "Klaim poin dari akun ini untuk produk ini pernah ditolak. Hubungi layanan pelanggan kalau menurut Anda keputusan itu keliru.")
 	ErrClaimReasonRequired = apperror.Validation(apperror.FieldError{
-		Field: "note", Code: "required", Message: "alasan wajib diisi untuk REVERSE"})
+		Field: "note", Code: "required", Message: "wajib diisi untuk membatalkan klaim yang sudah disetujui (REVERSE)"})
 
+	// Sengaja generik: tidak membedakan kode tidak terdaftar dari PIN salah.
 	ErrClaimInvalidCodeOrPIN = apperror.New(http.StatusUnprocessableEntity, "invalid_code_or_pin",
-		"Kode atau PIN salah", "Periksa kembali kode produk dan PIN di dalam kemasan.")
+		"Kode atau PIN salah", "Periksa lagi kode produk dan PIN di dalam kemasan, lalu coba lagi.")
 	ErrClaimLocked = apperror.New(http.StatusLocked, "claim_locked",
-		"Klaim dikunci", "Terlalu banyak percobaan PIN salah untuk produk ini. Hubungi layanan pelanggan.")
+		"Klaim dikunci", "PIN untuk produk ini sudah terlalu sering salah, jadi klaimnya dikunci. Hubungi layanan pelanggan.")
 	ErrClaimAlreadyClaimed = apperror.New(http.StatusConflict, "already_claimed",
-		"Sudah diklaim", "Poin untuk produk ini sudah diklaim.")
+		"Sudah diklaim", "Poin untuk produk ini sudah diklaim. Satu produk hanya bisa diklaim sekali.")
 	ErrClaimNotAllowed = apperror.New(http.StatusConflict, "claim_not_allowed",
-		"Klaim belum bisa diproses", "Produk ini belum tercatat terjual. Simpan struk dan hubungi layanan pelanggan.")
+		"Klaim belum bisa diproses", "Penjualan produk ini belum tercatat di sistem kami. Simpan struk pembelian, lalu hubungi layanan pelanggan.")
 	ErrClaimConsumerInactive = apperror.New(http.StatusForbidden, "consumer_inactive",
-		"Akun tidak aktif", "Akun konsumen diblokir atau sudah dihapus.")
+		"Akun tidak aktif", "Akun ini tidak bisa dipakai. Hubungi layanan pelanggan.")
+	// Staff (review klaim).
 	ErrClaimNotFound = apperror.New(http.StatusNotFound, "claim_not_found",
-		"Klaim tidak ditemukan", "Klaim tidak ada.")
+		"Klaim tidak ditemukan", "Klaim yang diminta tidak ada.")
 	ErrClaimAlreadyDecided = apperror.New(http.StatusConflict, "claim_already_decided",
-		"Klaim sudah diputuskan", "Klaim ini sudah disetujui atau ditolak.")
+		"Klaim sudah diputuskan", "Klaim ini sudah disetujui atau ditolak. Muat ulang untuk melihat keputusan terbaru.")
 )
 
 // serialMaxErrorFields membatasi daftar field per error supaya respons tetap
@@ -126,7 +129,7 @@ func RejectDuplicateCodes(field string, codes []string) error {
 	for i, c := range codes {
 		if first, dup := seen[c]; dup {
 			fields = append(fields, apperror.FieldError{Field: fmt.Sprintf("%s[%d]", field, i), Code: "duplicate_code",
-				Message: fmt.Sprintf("duplikat dengan %s[%d]", field, first)})
+				Message: fmt.Sprintf("sama dengan kode ke-%d", first+1)})
 			continue
 		}
 		seen[c] = i

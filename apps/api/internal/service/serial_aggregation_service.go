@@ -62,7 +62,7 @@ func (s *SerialService) Aggregate(ctx context.Context, p *auth.Principal, parent
 		for _, c := range childCodes {
 			if c == parentCode {
 				return serialErrWithFields(ErrSerialCycleDetected, []apperror.FieldError{
-					idx.fieldError(c, "cycle_detected", "induk tidak boleh menjadi anaknya sendiri")})
+					idx.fieldError(c, "cycle_detected", "sama dengan kode kemasan induk")})
 			}
 			if _, ok := byCode[c]; !ok {
 				missing = append(missing, idx.fieldError(c, "serial_not_found", "kode tidak terdaftar"))
@@ -75,7 +75,7 @@ func (s *SerialService) Aggregate(ctx context.Context, p *auth.Principal, parent
 			return err
 		}
 		if !packableStatus[parent.Status] {
-			return serialErrWithDetail(ErrSerialStatusMismatch, "Induk berstatus %s; agregasi hanya untuk COMMISSIONED atau IN_STOCK.", parent.Status)
+			return serialErrWithDetail(ErrSerialStatusMismatch, "Kemasan induk berstatus %s. Pengemasan hanya bisa untuk kemasan berstatus COMMISSIONED atau IN_STOCK.", parent.Status)
 		}
 
 		ranks, err := s.repo.LevelRanks(tx)
@@ -91,7 +91,7 @@ func (s *SerialService) Aggregate(ctx context.Context, p *auth.Principal, parent
 				childLevel = ch.LevelCode
 			} else if ch.LevelCode != childLevel {
 				return serialErrWithFields(ErrSerialMixedLevels, []apperror.FieldError{
-					idx.fieldError(c, "mixed_levels", "level anak harus sama")})
+					idx.fieldError(c, "mixed_levels", "levelnya berbeda dari isi lain")})
 			}
 			if ranks[parent.LevelCode] <= ranks[ch.LevelCode] {
 				levelErrs = append(levelErrs, idx.fieldError(c, "level_mismatch",
@@ -100,11 +100,11 @@ func (s *SerialService) Aggregate(ctx context.Context, p *auth.Principal, parent
 			}
 			if ch.Status != parent.Status || !sameUUID(ch.LocationID, parent.LocationID) {
 				statusErrs = append(statusErrs, idx.fieldError(c, "status_mismatch",
-					"status/lokasi anak harus sama dengan induk"))
+					"status atau lokasinya berbeda dari kemasan induk"))
 				continue
 			}
 			if !sameUUID(ch.ProductID, parent.ProductID) {
-				productErrs = append(productErrs, idx.fieldError(c, "product_mismatch", "produk anak berbeda dengan induk"))
+				productErrs = append(productErrs, idx.fieldError(c, "product_mismatch", "produknya berbeda dari kemasan induk"))
 				continue
 			}
 			if ch.ParentID != nil {
@@ -112,7 +112,7 @@ func (s *SerialService) Aggregate(ctx context.Context, p *auth.Principal, parent
 					res.AlreadyInParent++
 					continue
 				}
-				packedErrs = append(packedErrs, idx.fieldError(c, "already_packed", "sudah di kemasan lain"))
+				packedErrs = append(packedErrs, idx.fieldError(c, "already_packed", "sudah berada di kemasan lain"))
 				continue
 			}
 			newIDs = append(newIDs, ch.ID)
@@ -142,7 +142,7 @@ func (s *SerialService) Aggregate(ctx context.Context, p *auth.Principal, parent
 		for _, c := range childCodes {
 			if anc[byCode[c].ID] {
 				return serialErrWithFields(ErrSerialCycleDetected, []apperror.FieldError{
-					idx.fieldError(c, "cycle_detected", "anak adalah leluhur induk")})
+					idx.fieldError(c, "cycle_detected", "kemasan ini membungkus kemasan induk")})
 			}
 		}
 
@@ -157,7 +157,7 @@ func (s *SerialService) Aggregate(ctx context.Context, p *auth.Principal, parent
 			return ErrSerialPackagingSpecMissing
 		}
 		if spec.ParentLevel != parent.LevelCode {
-			return serialErrWithDetail(ErrSerialLevelMismatch, "%s dikemas ke %s menurut spesifikasi produk, bukan %s.",
+			return serialErrWithDetail(ErrSerialLevelMismatch, "Menurut spesifikasi produk, %s dikemas ke %s, bukan ke %s.",
 				childLevel, spec.ParentLevel, parent.LevelCode)
 		}
 		existing, err := s.repo.ChildCount(tx, parent.ID)
@@ -165,7 +165,7 @@ func (s *SerialService) Aggregate(ctx context.Context, p *auth.Principal, parent
 			return err
 		}
 		if existing+int64(len(newIDs)) > int64(spec.QtyPerParent) {
-			return serialErrWithDetail(ErrSerialCapacityExceeded, "Kapasitas %s %d; sudah berisi %d, ditambah %d.",
+			return serialErrWithDetail(ErrSerialCapacityExceeded, "Kapasitas %s ini %d isi. Sudah berisi %d, dan permintaan ini menambah %d.",
 				parent.LevelCode, spec.QtyPerParent, existing, len(newIDs))
 		}
 		if !spec.AllowMixedBatch {
@@ -188,7 +188,7 @@ func (s *SerialService) Aggregate(ctx context.Context, p *auth.Principal, parent
 				}
 				batches[*ch.BatchID] = true
 				if len(batches) > 1 {
-					mixErrs = append(mixErrs, idx.fieldError(c, "mixed_batch_not_allowed", "batch berbeda dengan isi kemasan"))
+					mixErrs = append(mixErrs, idx.fieldError(c, "mixed_batch_not_allowed", "batchnya berbeda dari isi kemasan"))
 				}
 			}
 			if len(mixErrs) > 0 {
@@ -240,7 +240,7 @@ func (s *SerialService) Unpack(ctx context.Context, p *auth.Principal, code stri
 			return err
 		}
 		if !packableStatus[parent.Status] {
-			return serialErrWithDetail(ErrSerialStatusMismatch, "Kemasan berstatus %s; bongkar hanya untuk COMMISSIONED atau IN_STOCK.", parent.Status)
+			return serialErrWithDetail(ErrSerialStatusMismatch, "Kemasan ini berstatus %s. Pembongkaran hanya bisa untuk kemasan berstatus COMMISSIONED atau IN_STOCK.", parent.Status)
 		}
 		n, err := s.repo.DetachChildren(tx, parent.ID,
 			s.eventSpec("unpacking", actor, EventRef{Type: "SERIAL_UNIT", ID: &parent.ID}))

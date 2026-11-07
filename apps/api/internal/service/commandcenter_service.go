@@ -63,12 +63,12 @@ var anomalyTransitions = map[string][]string{
 
 // ErrInvalidTransition: transisi status anomali tidak sah dari status sekarang.
 func errInvalidTransition(from, to string) *apperror.Error {
-	return apperror.New(http.StatusConflict, "invalid_transition", "Transisi tidak valid",
-		fmt.Sprintf("Anomali berstatus %s tidak bisa diubah menjadi %s.", from, to))
+	return apperror.New(http.StatusConflict, "invalid_transition", "Status tidak bisa diubah",
+		fmt.Sprintf("Anomali berstatus %s tidak bisa diubah menjadi %s. Muat ulang untuk melihat status terbaru.", from, to))
 }
 
 var errAnomalyNotFound = apperror.New(http.StatusNotFound, "anomaly_not_found",
-	"Anomali tidak ditemukan", "Anomali tidak ada atau di luar cakupan akun ini.")
+	"Anomali tidak ditemukan", "Anomali ini tidak ada atau di luar akses akun ini.")
 
 type ccStore interface {
 	ListStock(ctx context.Context, f repository.CCStockFilter) ([]repository.CCStockRow, error)
@@ -378,12 +378,12 @@ func (s *CommandCenterService) UpdateAnomaly(ctx context.Context, in AnomalyUpda
 	from, ok := anomalyTransitions[in.Status]
 	if !ok {
 		return dto.CCAnomalyItem{}, apperror.Validation(apperror.FieldError{
-			Field: "status", Code: "oneof", Message: "harus salah satu dari: ACK RESOLVED FALSE_POSITIVE"})
+			Field: "status", Code: "oneof", Message: "harus salah satu dari: ACK, RESOLVED, FALSE_POSITIVE"})
 	}
 	terminal := in.Status == AnomalyResolved || in.Status == AnomalyFalsePositive
 	if terminal && in.Note == nil {
 		return dto.CCAnomalyItem{}, apperror.Validation(apperror.FieldError{
-			Field: "note", Code: "required", Message: "wajib diisi untuk menutup anomali (RESOLVED/FALSE_POSITIVE)"})
+			Field: "note", Code: "required", Message: "wajib diisi saat menutup anomali (RESOLVED atau FALSE_POSITIVE)"})
 	}
 
 	var actor *uuid.UUID

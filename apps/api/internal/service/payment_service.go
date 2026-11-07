@@ -32,7 +32,7 @@ const (
 
 // ErrPaymentRefConflict: provider_ref yang sama dipakai untuk order lain.
 var ErrPaymentRefConflict = apperror.New(http.StatusConflict, "payment_ref_conflict",
-	"Referensi pembayaran bentrok", "provider_ref ini sudah tercatat untuk order lain.")
+	"Referensi pembayaran bentrok", "provider_ref ini sudah tercatat untuk order lain; pembayaran tidak dicatat.")
 
 // PaymentService memproses webhook pembayaran.
 type PaymentService struct {
@@ -144,7 +144,7 @@ func (s *PaymentService) HandleMockWebhook(ctx context.Context, in PaymentWebhoo
 			loc, err := o.reserveAllLines(ctx, tx, order.ID, SystemLedgerActor, now)
 			if err == nil {
 				if err := o.transition(tx, order.ID, OrderStatusExpired, OrderStatusPaid,
-					"Bayar telat, stok berhasil dipesan ulang", &now, SystemLedgerActor, now); err != nil {
+					"Pembayaran datang setelah batas waktu; stok berhasil dipesan ulang", &now, SystemLedgerActor, now); err != nil {
 					return err
 				}
 				out.Outcome, out.OrderStatus = PaymentOutcomeLateReallocated, OrderStatusPaid
@@ -156,7 +156,7 @@ func (s *PaymentService) HandleMockWebhook(ctx context.Context, in PaymentWebhoo
 				return err
 			}
 			if err := o.transition(tx, order.ID, OrderStatusExpired, OrderStatusNeedsAction,
-				"Bayar telat dan stok sudah habis: refund otomatis", &now, SystemLedgerActor, now); err != nil {
+				"Pembayaran datang setelah batas waktu dan stok sudah habis; order perlu refund", &now, SystemLedgerActor, now); err != nil {
 				return err
 			}
 			if err := o.requestRefund(tx, order.ID, "late_payment_out_of_stock", &pay.ID, now); err != nil {

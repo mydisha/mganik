@@ -21,7 +21,7 @@ import (
 // berbeda. Ditolak (bukan ditimpa diam-diam) supaya integrasi marketplace
 // yang salah kirim atau payload yang dimanipulasi langsung terlihat.
 var ErrMarketplaceRefConflict = apperror.New(http.StatusConflict, "external_ref_conflict",
-	"Referensi order bentrok", "external_ref ini sudah diimpor dengan isi berbeda.")
+	"Referensi order bentrok", "external_ref ini sudah diimpor dengan isi berbeda; impor ulang ditolak.")
 
 // MarketplaceService mengimpor order yang sudah dibayar di marketplace.
 type MarketplaceService struct {
@@ -55,23 +55,23 @@ type MarketplaceImportResult struct {
 
 func marketplaceValidateLines(lines []MarketplaceLine) error {
 	if len(lines) == 0 || len(lines) > MaxOrderLines {
-		return apperror.Validation(apperror.FieldError{Field: "lines", Code: "length", Message: fmt.Sprintf("wajib berisi 1-%d baris", MaxOrderLines)})
+		return apperror.Validation(apperror.FieldError{Field: "lines", Code: "length", Message: fmt.Sprintf("wajib berisi 1 sampai %d baris", MaxOrderLines)})
 	}
 	seen := map[string]int{}
 	var fields []apperror.FieldError
 	for i, l := range lines {
 		f := func(name string) string { return fmt.Sprintf("lines[%d].%s", i, name) }
 		if l.Qty <= 0 || l.Qty > MaxOrderLineQty {
-			fields = append(fields, apperror.FieldError{Field: f("qty"), Code: "range", Message: fmt.Sprintf("harus 1-%d", MaxOrderLineQty)})
+			fields = append(fields, apperror.FieldError{Field: f("qty"), Code: "range", Message: "harus 1 sampai " + apperror.FormatNumber(MaxOrderLineQty)})
 		}
 		if l.UnitPrice < 0 || l.UnitPrice > MaxUnitPrice {
-			fields = append(fields, apperror.FieldError{Field: f("unit_price"), Code: "range", Message: fmt.Sprintf("harus 0-%d", int64(MaxUnitPrice))})
+			fields = append(fields, apperror.FieldError{Field: f("unit_price"), Code: "range", Message: "harus Rp0 sampai " + apperror.FormatRupiah(MaxUnitPrice)})
 		}
 		if l.Discount < 0 || (l.Qty > 0 && l.UnitPrice >= 0 && l.Discount > l.Qty*l.UnitPrice) {
-			fields = append(fields, apperror.FieldError{Field: f("discount"), Code: "range", Message: "tidak boleh negatif atau melebihi qty × unit_price"})
+			fields = append(fields, apperror.FieldError{Field: f("discount"), Code: "range", Message: "tidak boleh negatif atau melebihi qty × harga satuan"})
 		}
 		if j, dup := seen[l.SKU]; dup {
-			fields = append(fields, apperror.FieldError{Field: f("sku"), Code: "duplicate", Message: fmt.Sprintf("SKU sama dengan lines[%d]", j)})
+			fields = append(fields, apperror.FieldError{Field: f("sku"), Code: "duplicate", Message: fmt.Sprintf("SKU sama dengan baris %d", j+1)})
 		}
 		seen[l.SKU] = i
 	}
@@ -185,7 +185,7 @@ func (s *MarketplaceService) Import(ctx context.Context, in MarketplaceOrderInpu
 		if err := o.orders.InsertLines(tx, lines); err != nil {
 			return err
 		}
-		if err := o.initialHistory(tx, order.ID, OrderStatusPaid, "Impor order marketplace (sudah dibayar)", SystemLedgerActor, now); err != nil {
+		if err := o.initialHistory(tx, order.ID, OrderStatusPaid, "Order marketplace diimpor (sudah dibayar)", SystemLedgerActor, now); err != nil {
 			return err
 		}
 		if order.Total > 0 {

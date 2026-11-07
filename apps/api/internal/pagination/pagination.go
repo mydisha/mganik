@@ -81,7 +81,7 @@ func Parse(limitRaw, cursorRaw, kind string, key any) (Request, error) {
 		if err := Decode(cursorRaw, kind, key); err != nil {
 			fields = append(fields, apperror.FieldError{
 				Field: FieldCursor, Code: "invalid_cursor",
-				Message: "cursor tidak valid; mulai lagi dari halaman pertama",
+				Message: "posisi halaman tidak valid; muat ulang dari halaman pertama",
 			})
 		} else {
 			req.HasCursor = true

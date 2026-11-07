@@ -22,12 +22,27 @@ import (
 
 var (
 	ErrOTPUnavailable = apperror.New(http.StatusServiceUnavailable, "otp_unavailable",
-		"Login konsumen tidak tersedia", "Pengiriman kode OTP belum dikonfigurasi di server ini.")
+		"Masuk belum tersedia", "Masuk dengan kode OTP belum diaktifkan di layanan ini, jadi klaim poin belum bisa dilakukan lewat halaman ini.")
+	// Detail generik ini dipakai saat tidak ada kode aktif untuk nomor itu
+	// (tidak pernah diminta atau sudah kedaluwarsa). Kalau ada kode aktif dan
+	// yang dimasukkan salah, verifyOTP mengganti detailnya dengan sisa
+	// percobaan ("Sisa N percobaan"); itu keputusan owner.
 	ErrOTPInvalid = apperror.New(http.StatusUnauthorized, "otp_invalid",
-		"Kode salah", "Kode OTP salah atau sudah kedaluwarsa.")
+		"Kode salah", "Kode OTP salah atau sudah kedaluwarsa. Periksa kodenya, atau minta kode baru.")
 	ErrConsumerBlocked = apperror.New(http.StatusForbidden, "consumer_blocked",
-		"Akun diblokir", "Akun ini tidak dapat digunakan. Hubungi layanan pelanggan.")
+		"Akun tidak aktif", "Akun ini tidak bisa dipakai. Hubungi layanan pelanggan.")
 )
+
+// otpCodeExhausted: jatah percobaan satu kode habis. Status, code, dan
+// Retry-After sama dengan tooManyAttempts(0, ...); bedanya hanya pesan, karena
+// menunggu tidak membantu: konsumen harus meminta kode baru.
+func otpCodeExhausted() error {
+	return &RetryAfterError{
+		Err: apperror.New(http.StatusTooManyRequests, "too_many_attempts", "Terlalu banyak percobaan",
+			"Kode ini sudah terlalu sering salah dimasukkan. Minta kode baru untuk mencoba lagi."),
+		After: time.Minute,
+	}
+}
 
 // OTPPolicy: batas OTP. Permintaan per nomor dan percobaan per kode dihitung
 // di DB (tahan restart); batas per IP in-memory.
@@ -95,7 +110,7 @@ func NewConsumerService(db *gorm.DB, store consumerStore, audit auditWriter, c c
 }
 
 var errInvalidPhoneField = apperror.Validation(apperror.FieldError{
-	Field: "phone", Code: "invalid_phone", Message: "harus nomor seluler Indonesia, mis. 0812xxxxxxx",
+	Field: "phone", Code: "invalid_phone", Message: "harus nomor HP Indonesia, misalnya 0812xxxxxxxx",
 })
 
 // OTPRequested: kapan kode kedaluwarsa. Respons sama untuk nomor baru dan
@@ -213,15 +228,15 @@ func (s *ConsumerService) verifyOTP(ctx context.Context, phone, code, previousTo
 		return ConsumerLogin{}, err
 	}
 	if !ok {
-		return ConsumerLogin{}, tooManyAttempts(0, "percobaan untuk kode ini; minta kode baru")
+		return ConsumerLogin{}, otpCodeExhausted()
 	}
 	if !hmac.Equal(s.keys.OTPCodeHash(ch.ID[:], code), ch.CodeHash) {
 		left := ch.MaxAttempts - attempts
 		if left <= 0 {
-			return ConsumerLogin{}, tooManyAttempts(0, "percobaan untuk kode ini; minta kode baru")
+			return ConsumerLogin{}, otpCodeExhausted()
 		}
 		return ConsumerLogin{}, apperror.New(ErrOTPInvalid.Status, ErrOTPInvalid.Code, ErrOTPInvalid.Title,
-			fmt.Sprintf("Kode OTP salah. Sisa %d percobaan.", left))
+			fmt.Sprintf("Kode OTP salah. Sisa %d percobaan untuk kode ini.", left))
 	}
 
 	token, tokenHash, err := newSessionToken()

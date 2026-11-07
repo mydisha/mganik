@@ -151,7 +151,7 @@ type CreateOrderInput struct {
 func orderValidateLines(lines []CreateOrderLine) error {
 	if len(lines) == 0 || len(lines) > MaxOrderLines {
 		return apperror.Validation(apperror.FieldError{
-			Field: "lines", Code: "length", Message: fmt.Sprintf("wajib berisi 1-%d baris", MaxOrderLines),
+			Field: "lines", Code: "length", Message: fmt.Sprintf("wajib berisi 1 sampai %d baris", MaxOrderLines),
 		})
 	}
 	seen := make(map[uuid.UUID]int, len(lines))
@@ -159,7 +159,7 @@ func orderValidateLines(lines []CreateOrderLine) error {
 	for i, l := range lines {
 		if l.Qty <= 0 || l.Qty > MaxOrderLineQty {
 			fields = append(fields, apperror.FieldError{
-				Field: fmt.Sprintf("lines[%d].qty", i), Code: "range", Message: fmt.Sprintf("harus 1-%d", MaxOrderLineQty),
+				Field: fmt.Sprintf("lines[%d].qty", i), Code: "range", Message: "harus 1 sampai " + apperror.FormatNumber(MaxOrderLineQty),
 			})
 		}
 		if l.ProductID == uuid.Nil {
@@ -169,7 +169,7 @@ func orderValidateLines(lines []CreateOrderLine) error {
 		if j, dup := seen[l.ProductID]; dup {
 			fields = append(fields, apperror.FieldError{
 				Field: fmt.Sprintf("lines[%d].product_id", i), Code: "duplicate",
-				Message: fmt.Sprintf("produk sama dengan lines[%d]; gabungkan qty-nya", j),
+				Message: fmt.Sprintf("produk sama dengan baris %d; gabungkan qty-nya ke satu baris", j+1),
 			})
 			continue
 		}
@@ -251,7 +251,7 @@ func (s *OrderService) createTx(ctx context.Context, tx *gorm.DB, in CreateOrder
 		if _, ok := products[l.ProductID]; !ok {
 			fields = append(fields, apperror.FieldError{Field: fmt.Sprintf("lines[%d].product_id", i), Code: "not_found", Message: "produk tidak ditemukan"})
 		} else if _, ok := prices[l.ProductID]; !ok {
-			fields = append(fields, apperror.FieldError{Field: fmt.Sprintf("lines[%d].product_id", i), Code: "price_not_found", Message: "produk belum punya harga di channel ini"})
+			fields = append(fields, apperror.FieldError{Field: fmt.Sprintf("lines[%d].product_id", i), Code: "price_not_found", Message: "belum punya harga di channel ini"})
 		}
 	}
 	if len(fields) > 0 {
@@ -288,7 +288,7 @@ func (s *OrderService) createTx(ctx context.Context, tx *gorm.DB, in CreateOrder
 	if err := s.orders.SetFulfillmentLocation(tx, order.ID, loc, now); err != nil {
 		return OrderView{}, err
 	}
-	if err := s.initialHistory(tx, order.ID, OrderStatusPendingPayment, "Order dibuat, stok dipesan", actor, now); err != nil {
+	if err := s.initialHistory(tx, order.ID, OrderStatusPendingPayment, "Order dibuat dan stok dipesan", actor, now); err != nil {
 		return OrderView{}, err
 	}
 	if err := s.emit(tx, EventOrderCreated, order.ID, map[string]any{
@@ -318,7 +318,7 @@ func invOutOfStock(lines []invAllocLine, maxATP map[uuid.UUID]int64) error {
 		if atp := maxATP[l.ProductID]; atp < l.Qty {
 			fields = append(fields, apperror.FieldError{
 				Field: fmt.Sprintf("lines[%d].qty", l.Index), Code: "insufficient_stock",
-				Message: fmt.Sprintf("stok online tersedia maksimal %d di satu lokasi", atp),
+				Message: "stok online tersedia paling banyak " + apperror.FormatNumber(atp) + " di satu lokasi",
 			})
 		}
 	}
@@ -327,7 +327,7 @@ func invOutOfStock(lines []invAllocLine, maxATP map[uuid.UUID]int64) error {
 		for _, l := range lines {
 			fields = append(fields, apperror.FieldError{
 				Field: fmt.Sprintf("lines[%d].qty", l.Index), Code: "not_at_single_location",
-				Message: "tidak tersedia bersama line lain di satu lokasi fulfillment",
+				Message: "tidak tersedia bersama baris lain di satu lokasi pengirim",
 			})
 		}
 	}
@@ -544,7 +544,7 @@ func (s *OrderService) Cancel(ctx context.Context, p *auth.Principal, orderID uu
 	}
 	reason, n := invTrimmed(reason)
 	if n < 3 || n > 500 {
-		return OrderView{}, apperror.Validation(apperror.FieldError{Field: "reason", Code: "length", Message: "wajib diisi 3-500 karakter"})
+		return OrderView{}, apperror.Validation(apperror.FieldError{Field: "reason", Code: "length", Message: "wajib diisi, 3 sampai 500 karakter"})
 	}
 	actor := LedgerActorFromPrincipal(p)
 	var view OrderView
@@ -713,7 +713,7 @@ func (s *OrderService) Fulfill(ctx context.Context, p *auth.Principal, orderID u
 			return err
 		}
 
-		if err := s.transition(tx, o.ID, OrderStatusPaid, OrderStatusFulfilling, "Pick dan assign serial", nil, actor, now); err != nil {
+		if err := s.transition(tx, o.ID, OrderStatusPaid, OrderStatusFulfilling, "Barang diambil dan serial dicatat", nil, actor, now); err != nil {
 			return err
 		}
 		for _, r := range rs {
@@ -743,7 +743,7 @@ func (s *OrderService) Fulfill(ctx context.Context, p *auth.Principal, orderID u
 				return err
 			}
 		}
-		if err := s.transition(tx, o.ID, OrderStatusFulfilling, OrderStatusShipped, "Stok di-commit, order dikirim", nil, actor, now); err != nil {
+		if err := s.transition(tx, o.ID, OrderStatusFulfilling, OrderStatusShipped, "Order dikirim dan stok dikurangi", nil, actor, now); err != nil {
 			return err
 		}
 		if err := s.emit(tx, EventOrderShipped, o.ID, map[string]any{"serial_unit_ids": serialIDs}, now); err != nil {
@@ -831,7 +831,7 @@ func (s *OrderService) ExpireDueOrders(ctx context.Context, limit int) (int, err
 				return err
 			}
 			if err := s.transition(tx, o.ID, OrderStatusPendingPayment, OrderStatusExpired,
-				"Batas waktu pembayaran habis, stok dilepas", nil, SystemLedgerActor, now); err != nil {
+				"Batas waktu pembayaran habis; reservasi stok dilepas", nil, SystemLedgerActor, now); err != nil {
 				return err
 			}
 			if err := s.emit(tx, EventOrderExpired, o.ID, map[string]any{"reason": "payment_expired"}, now); err != nil {
@@ -927,7 +927,7 @@ func (s *OrderService) HandleReservationPreempted(ctx context.Context, tx *gorm.
 	}
 	if o.Status == OrderStatusPaid {
 		if err := s.transition(tx, o.ID, OrderStatusPaid, OrderStatusNeedsAction,
-			"Stok di-preempt penjualan toko dan realokasi gagal", nil, SystemLedgerActor, now); err != nil {
+			"Stok yang dipesan terpakai penjualan toko, dan tidak ada lokasi lain yang bisa menggantikan", nil, SystemLedgerActor, now); err != nil {
 			return err
 		}
 		if err := s.orders.PatchMetadata(tx, o.ID, model.MustJSON(map[string]any{
@@ -945,7 +945,7 @@ func (s *OrderService) HandleReservationPreempted(ctx context.Context, tx *gorm.
 	// pesan ulang stok, atau NEEDS_ACTION + refund). Konflik tetap OPEN
 	// (diselesaikan Fase 4/ops).
 	if err := s.transition(tx, o.ID, OrderStatusPendingPayment, OrderStatusExpired,
-		"Stok di-preempt penjualan toko sebelum dibayar; tidak ada lokasi lain", nil, SystemLedgerActor, now); err != nil {
+		"Stok yang dipesan terpakai penjualan toko sebelum order dibayar, dan tidak ada lokasi lain", nil, SystemLedgerActor, now); err != nil {
 		return err
 	}
 	if err := s.orders.PatchMetadata(tx, o.ID, model.MustJSON(map[string]any{

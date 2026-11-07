@@ -40,12 +40,12 @@ func (s *HealthService) Readiness(ctx context.Context) (Readiness, error) {
 
 	if err := s.store.Ping(ctx); err != nil {
 		return Readiness{}, apperror.Wrap(err, http.StatusServiceUnavailable, "database_unavailable",
-			"Belum siap", "Database tidak bisa dihubungi.")
+			"Belum siap", "Server belum bisa terhubung ke database.")
 	}
 	version, err := s.store.SchemaVersion(ctx)
 	if err != nil {
 		return Readiness{}, apperror.Wrap(err, http.StatusServiceUnavailable, "schema_not_ready",
-			"Belum siap", "Migrasi database belum diterapkan.")
+			"Belum siap", "Migrasi database belum diterapkan. Jalankan api migrate.")
 	}
 	return Readiness{SchemaVersion: version, CheckedAt: s.now().UTC()}, nil
 }

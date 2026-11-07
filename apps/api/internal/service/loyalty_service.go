@@ -492,7 +492,7 @@ func (s *LoyaltyService) Review(ctx context.Context, p *auth.Principal, claimID 
 		}
 	default:
 		return model.LoyaltyClaim{}, apperror.Validation(apperror.FieldError{
-			Field: "decision", Code: "oneof", Message: "harus salah satu dari: APPROVE REJECT REVERSE"})
+			Field: "decision", Code: "oneof", Message: "harus salah satu dari: APPROVE, REJECT, REVERSE"})
 	}
 	lc, err := s.serials.Lifecycle(ctx)
 	if err != nil {

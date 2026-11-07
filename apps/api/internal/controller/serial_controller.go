@@ -38,7 +38,7 @@ func normalizeSerialCodes(field string, raw []string) ([]string, error) {
 		code, ok := domain.NormalizeSerialCode(r)
 		if !ok {
 			fields = append(fields, apperror.FieldError{Field: fmt.Sprintf("%s[%d]", field, i), Code: "invalid_format",
-				Message: "format kode serial tidak valid (16 karakter Crockford Base32)"})
+				Message: "bukan kode serial yang valid (16 karakter huruf dan angka)"})
 			continue
 		}
 		out[i] = code
@@ -56,7 +56,7 @@ func normalizeOneSerialCode(field, raw string) (string, error) {
 	code, ok := domain.NormalizeSerialCode(raw)
 	if !ok {
 		return "", apperror.Validation(apperror.FieldError{Field: field, Code: "invalid_format",
-			Message: "format kode serial tidak valid (16 karakter Crockford Base32)"})
+			Message: "bukan kode serial yang valid (16 karakter huruf dan angka)"})
 	}
 	return code, nil
 }

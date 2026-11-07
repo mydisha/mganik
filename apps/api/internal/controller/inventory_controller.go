@@ -52,12 +52,12 @@ func (h *InventoryController) ListBalances(c *gin.Context) {
 	if v := c.Query("limit"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 || n > service.MaxBalancePageSize {
-			fields = append(fields, apperror.FieldError{Field: "limit", Code: "range", Message: "harus 1-200"})
+			fields = append(fields, apperror.FieldError{Field: "limit", Code: "range", Message: "harus antara 1 dan " + strconv.Itoa(service.MaxBalancePageSize)})
 		}
 		q.Limit = n
 	}
 	if v := c.Query("cursor"); len(v) > 512 {
-		fields = append(fields, apperror.FieldError{Field: "cursor", Code: "max", Message: "terlalu panjang"})
+		fields = append(fields, apperror.FieldError{Field: "cursor", Code: "max", Message: "posisi halaman tidak valid; muat ulang dari halaman pertama"})
 	} else {
 		q.Cursor = v
 	}

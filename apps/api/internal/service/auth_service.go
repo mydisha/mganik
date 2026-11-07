@@ -274,7 +274,7 @@ func (s *AuthService) acquireVerifySlot(ctx context.Context) error {
 func errServerBusy() error {
 	return &RetryAfterError{
 		Err: apperror.New(http.StatusServiceUnavailable, "server_busy", "Server sibuk",
-			"Terlalu banyak permintaan masuk bersamaan. Coba lagi beberapa detik lagi."),
+			"Terlalu banyak permintaan masuk pada saat yang sama. Coba lagi dalam beberapa detik."),
 		After: time.Second,
 	}
 }

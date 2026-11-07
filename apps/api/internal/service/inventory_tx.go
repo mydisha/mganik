@@ -149,7 +149,7 @@ func invCheckText(fieldValues ...string) error {
 		}
 		if bad {
 			fields = append(fields, apperror.FieldError{
-				Field: name, Code: "invalid_characters", Message: "memuat karakter kontrol yang tidak diizinkan",
+				Field: name, Code: "invalid_characters", Message: "memuat karakter tak terlihat yang tidak diizinkan",
 			})
 		}
 	}
@@ -157,7 +157,7 @@ func invCheckText(fieldValues ...string) error {
 		return nil
 	}
 	e := apperror.New(http.StatusUnprocessableEntity, "invalid_characters",
-		"Karakter tidak valid", "Teks memuat karakter kontrol (misal NUL) yang tidak diizinkan.")
+		"Karakter tidak valid", "Teks memuat karakter tak terlihat (karakter kontrol) yang tidak diizinkan. Karakter ini sering ikut saat teks ditempel dari aplikasi lain; ketik ulang teksnya, lalu kirim lagi.")
 	e.Fields = fields
 	return e
 }

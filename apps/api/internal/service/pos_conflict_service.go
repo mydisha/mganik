@@ -56,12 +56,12 @@ func (s *PosService) ResolveConflict(ctx context.Context, p *auth.Principal, in 
 	var fields []apperror.FieldError
 	if !slices.Contains(PosConflictResolutions, in.Resolution) {
 		fields = append(fields, apperror.FieldError{Field: "resolution", Code: "oneof",
-			Message: "harus salah satu dari: " + strings.Join(PosConflictResolutions, " ")})
+			Message: "harus salah satu dari: " + strings.Join(PosConflictResolutions, ", ")})
 	}
 	note, n := invTrimmed(in.Note)
 	if n < posMinResolveNote || n > posMaxResolveNote {
 		fields = append(fields, apperror.FieldError{Field: "note", Code: "length",
-			Message: fmt.Sprintf("wajib %d-%d karakter", posMinResolveNote, posMaxResolveNote)})
+			Message: fmt.Sprintf("wajib diisi, %d sampai %s karakter", posMinResolveNote, apperror.FormatNumber(posMaxResolveNote))})
 	}
 	if len(fields) > 0 {
 		return zero, apperror.Validation(fields...)

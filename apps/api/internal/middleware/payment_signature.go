@@ -41,7 +41,7 @@ var (
 	ErrWebhookSignatureInvalid = apperror.New(http.StatusUnauthorized, "invalid_signature",
 		"Signature tidak valid", "Header signature webhook tidak ada atau tidak cocok.")
 	ErrWebhookTimestampStale = apperror.New(http.StatusUnauthorized, "stale_timestamp",
-		"Timestamp kedaluwarsa", "Timestamp webhook di luar toleransi 5 menit.")
+		"Timestamp kedaluwarsa", "Timestamp webhook berselisih lebih dari 5 menit dari jam server.")
 )
 
 // WebhookSigner menghitung HMAC-SHA256 dengan key tetap. State ipad dihitung

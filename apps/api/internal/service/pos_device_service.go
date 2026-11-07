@@ -158,7 +158,7 @@ func (s *PosService) ProvisionDevice(ctx context.Context, p *auth.Principal, in 
 	}
 	if n < 1 || n > posMaxDeviceName {
 		fields = append(fields, apperror.FieldError{Field: "name", Code: "length",
-			Message: fmt.Sprintf("wajib 1-%d karakter", posMaxDeviceName)})
+			Message: fmt.Sprintf("wajib diisi, 1 sampai %d karakter", posMaxDeviceName)})
 	}
 	if len(fields) > 0 {
 		return PosProvisioned{}, apperror.Validation(fields...)
@@ -451,7 +451,7 @@ func (s *PosService) BootstrapSerials(ctx context.Context, p *auth.Principal, cu
 	if cursor != "" {
 		if err := pagination.Decode(cursor, cursorPosSerials, &key); err != nil {
 			return pagination.Page[repository.PosSerialRow]{}, apperror.Validation(apperror.FieldError{
-				Field: pagination.FieldCursor, Code: "invalid_cursor", Message: "cursor tidak valid; mulai lagi dari halaman pertama"})
+				Field: pagination.FieldCursor, Code: "invalid_cursor", Message: "posisi halaman tidak valid; muat ulang dari halaman pertama"})
 		}
 	}
 	return s.serialPage(s.db.WithContext(ctx), locID, key.Code)
@@ -585,7 +585,7 @@ func (s *PosService) MarkStaleLocationsOffline(ctx context.Context) (int, error)
 // berubah tanpa provisioning ulang). Kegagalan server, bukan klien.
 func posInvalidSigningKey(err error) error {
 	return apperror.Wrap(err, http.StatusServiceUnavailable, "signing_key_unavailable",
-		"Signing key tidak bisa dibaca", "Signing key device tidak bisa dibuka server; hubungi admin untuk provisioning ulang.")
+		"Kunci perangkat tidak terbaca", "Server tidak bisa membuka kunci tanda tangan perangkat kasir ini. Hubungi admin untuk mendaftarkan ulang perangkatnya.")
 }
 
 // posSafeInt: batas aman bilangan bulat JS untuk nilai di payload.

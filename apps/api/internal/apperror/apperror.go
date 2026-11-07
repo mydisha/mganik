@@ -56,8 +56,8 @@ func Validation(fields ...FieldError) *Error {
 	return &Error{
 		Status: http.StatusUnprocessableEntity,
 		Code:   "validation_failed",
-		Title:  "Data tidak valid",
-		Detail: "Periksa kembali field yang ditandai.",
+		Title:  "Isian tidak valid",
+		Detail: "Perbaiki isian yang ditandai, lalu kirim lagi.",
 		Fields: fields,
 	}
 }
@@ -84,7 +84,7 @@ func Write(c *gin.Context, log *slog.Logger, err error) {
 		log.ErrorContext(c.Request.Context(), "error tak tertangani",
 			"error", err, "path", c.FullPath(), "request_id", c.GetString(RequestIDKey))
 		appErr = New(http.StatusInternalServerError, "internal_error",
-			"Terjadi kesalahan", "Terjadi kesalahan di server. Coba lagi beberapa saat lagi.")
+			"Gangguan server", "Server gagal memproses permintaan ini. Coba lagi dalam beberapa saat.")
 	} else if appErr.cause != nil {
 		log.WarnContext(c.Request.Context(), "error domain",
 			"code", appErr.Code, "error", appErr.cause, "request_id", c.GetString(RequestIDKey))
@@ -109,12 +109,13 @@ var (
 	ErrMethodNotAllowed = New(http.StatusMethodNotAllowed, "method_not_allowed",
 		"Metode tidak diizinkan", "Metode HTTP ini tidak didukung untuk alamat tersebut.")
 	ErrUnauthenticated = New(http.StatusUnauthorized, "unauthenticated",
-		"Belum masuk", "Masuk terlebih dahulu untuk mengakses alamat ini.")
-	// ErrForbidden juga dipakai service untuk cek objek/lokasi (BOLA).
+		"Belum masuk", "Masuk dulu untuk melanjutkan.")
+	// ErrForbidden juga dipakai service untuk cek objek/lokasi (BOLA), jadi
+	// pesannya tidak membedakan "tanpa izin" dari "di luar lokasi akun".
 	ErrForbidden = New(http.StatusForbidden, "forbidden",
-		"Tidak diizinkan", "Akun ini tidak memiliki izin untuk aksi tersebut.")
+		"Tidak diizinkan", "Akun ini tidak punya izin untuk aksi ini. Hubungi admin kalau aksesnya memang dibutuhkan.")
 	ErrBadRequest = New(http.StatusBadRequest, "invalid_request",
-		"Request tidak valid", "Body request bukan JSON yang valid atau memuat field yang tidak dikenal.")
+		"Permintaan tidak valid", "Isi permintaan bukan JSON yang valid atau memuat field yang tidak dikenal.")
 	ErrBodyTooLarge = New(http.StatusRequestEntityTooLarge, "body_too_large",
-		"Request terlalu besar", "Ukuran body melebihi batas yang diizinkan.")
+		"Permintaan terlalu besar", "Ukuran isi permintaan melebihi batas yang diizinkan.")
 )
