@@ -3,6 +3,7 @@ import { fileURLToPath, URL } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
+import { VitePWA } from "vite-plugin-pwa";
 
 // Dev server mem-proxy path API ke backend Go. Default mengikuti port API
 // di compose (8089); `make api` menjalankan backend lokal di port yang sama.
@@ -14,7 +15,42 @@ export default defineConfig(({ mode }) => {
   );
 
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      // PWA untuk kasir offline: app shell (HTML, JS, CSS, font, WASM) di-precache
+      // supaya /pos terbuka tanpa internet. Navigasi hanya /pos yang dilayani dari
+      // cache; /api, /healthz, dan /readyz tidak pernah di-cache (tanpa
+      // runtimeCaching) karena status online dan data transaksi harus dari server.
+      // Service worker didaftarkan dari features/pos/pwa.ts, bukan di semua halaman.
+      VitePWA({
+        injectRegister: false,
+        registerType: "prompt",
+        manifest: {
+          name: "mGanik Kasir",
+          short_name: "Kasir",
+          description: "Kasir toko mGanik yang tetap berjalan saat offline.",
+          lang: "id",
+          start_url: "/pos",
+          scope: "/",
+          display: "standalone",
+          orientation: "landscape",
+          // Token --background (terang) dan --primary dari app/styles.css.
+          background_color: "#f9fafb",
+          theme_color: "#1f2635",
+          icons: [],
+        },
+        workbox: {
+          globPatterns: ["**/*.{js,css,html,woff2,wasm}"],
+          navigateFallback: "/index.html",
+          navigateFallbackAllowlist: [/^\/pos(?:\/|$)/],
+          navigateFallbackDenylist: [/^\/api\//, /^\/healthz/, /^\/readyz/],
+          cleanupOutdatedCaches: true,
+          runtimeCaching: [],
+        },
+        devOptions: { enabled: false },
+      }),
+    ],
     resolve: {
       alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
     },
