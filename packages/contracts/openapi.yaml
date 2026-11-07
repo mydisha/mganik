@@ -36,9 +36,646 @@ paths:
                 $ref: "#/components/schemas/Problem"
 
   # ==== [iam] path di bawah ini ====
+  # Request ber-cookie dengan metode POST/PUT/PATCH/DELETE wajib
+  # Content-Type: application/json dan Origin (bila ada) sama dengan host atau
+  # terdaftar di ALLOWED_ORIGINS (403 csrf_rejected / 415 unsupported_media_type).
+  /api/v1/auth/login:
+    post:
+      operationId: login
+      summary: Login staff dengan email + password
+      description: >
+        Sukses memasang cookie `__Host-session` (HttpOnly, Secure, SameSite=Lax,
+        idle 8 jam, absolut 12 jam) dan mengembalikan profil seperti /auth/me.
+        Gagal memakai pesan generik yang sama untuk email tidak dikenal maupun
+        password salah. Percobaan dibatasi per email (5) dan per IP (20) dalam
+        15 menit; jatah dipesan sebelum password diverifikasi, jadi request
+        paralel tidak bisa melewatinya. Login sukses tidak memakan jatah IP.
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login berhasil
+          headers:
+            Set-Cookie:
+              description: "__Host-session=<token>; Path=/; Max-Age=43200; HttpOnly; Secure; SameSite=Lax"
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "400":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: invalid_credentials (email atau password salah)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: account_disabled, atau csrf_rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          description: too_many_attempts; detail memuat menit tunggu
+          headers:
+            Retry-After:
+              description: Detik sampai boleh mencoba lagi
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: server_busy (verifikasi password bersamaan penuh); coba lagi
+          headers:
+            Retry-After:
+              description: Detik sampai boleh mencoba lagi
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      summary: Mencabut sesi staff dan menghapus cookie
+      description: Idempotent; selalu 204 walau sesi sudah kedaluwarsa atau tidak ada.
+      tags: [auth]
+      security:
+        - sessionCookie: []
+        - {}
+      responses:
+        "204":
+          description: Sesi dicabut (kalau ada) dan cookie dihapus
+        "403":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/auth/me:
+    get:
+      operationId: getMe
+      summary: Profil staff yang sedang login, role, permission, dan scope lokasi
+      tags: [auth]
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Profil
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "401":
+          description: unauthenticated atau session_expired
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Pemanggil bukan staff (mis. token device)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/public/otp/request:
+    post:
+      operationId: requestConsumerOtp
+      summary: Minta kode OTP login konsumen (mock)
+      description: >
+        Nomor dinormalkan ke E.164 Indonesia (+628...). Prototype memakai kode
+        OTP tetap (OTP_MOCK_CODE) yang tidak pernah dikembalikan di respons;
+        dimatikan (503 otp_unavailable) di production tanpa izin demo. Dibatasi
+        5 permintaan per nomor dan 20 per IP dalam 15 menit.
+      tags: [consumer]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtpRequest"
+      responses:
+        "202":
+          description: Kode dikirim (respons sama untuk nomor baru maupun lama)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtpRequestResponse"
+        "403":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          description: too_many_attempts; detail memuat menit tunggu
+          headers:
+            Retry-After:
+              description: Detik sampai boleh mencoba lagi
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/public/otp/verify:
+    post:
+      operationId: verifyConsumerOtp
+      summary: Verifikasi OTP dan buat sesi konsumen
+      description: >
+        Sukses memasang cookie `__Host-consumer` (idle 24 jam, absolut 7 hari).
+        Maksimal 5 percobaan per kode; setelah itu minta kode baru. Cookie
+        konsumen lama (bila ada) dicabut dan diganti.
+      tags: [consumer]
+      security:
+        - consumerCookie: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtpVerifyRequest"
+      responses:
+        "200":
+          description: Login konsumen berhasil
+          headers:
+            Set-Cookie:
+              description: "__Host-consumer=<token>; Path=/; Max-Age=604800; HttpOnly; Secure; SameSite=Lax"
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsumerMeResponse"
+        "401":
+          description: otp_invalid (kode salah atau kedaluwarsa)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: consumer_blocked atau csrf_rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          description: too_many_attempts; detail memuat menit tunggu
+          headers:
+            Retry-After:
+              description: Detik sampai boleh mencoba lagi
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/public/consumer/me:
+    get:
+      operationId: getConsumerMe
+      summary: Konsumen yang sedang login (nomor disamarkan)
+      description: Butuh cookie `__Host-consumer` dari /public/otp/verify.
+      tags: [consumer]
+      security:
+        - consumerCookie: []
+      responses:
+        "200":
+          description: Profil konsumen
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsumerMeResponse"
+        "401":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/public/consumer/logout:
+    post:
+      operationId: logoutConsumer
+      summary: Mencabut sesi konsumen dan menghapus cookie
+      description: Idempotent; memakai cookie `__Host-consumer` bila ada.
+      tags: [consumer]
+      security:
+        - consumerCookie: []
+        - {}
+      responses:
+        "204":
+          description: Sesi dicabut (kalau ada) dan cookie dihapus
+        "403":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "415":
+          description: Lihat field code (problem+json)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
   # ==== [/iam] ====
 
   # ==== [serialization] produksi, agregasi, shipment, verifikasi, klaim ====
+  /api/v1/code-batches:
+    post:
+      operationId: mintCodes
+      summary: Mint kode serial acak 80-bit (dan PIN klaim untuk UNIT) untuk satu job cetak
+      description: >
+        Permission code.mint. Kode dan PIN plaintext hanya dikembalikan sekali di
+        respons ini sebagai bahan file cetak; DB hanya menyimpan HMAC PIN.
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MintCodesRequest"
+      responses:
+        "201":
+          description: Job cetak dibuat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MintCodesResponse"
+        # Anchor YAML dipakai ulang semua respons error di bagian ini
+        # (components.responses berada di luar marker bagian ini).
+        "400": &serialProblem
+          description: Error domain (application/problem+json, kode di field code)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401": *serialProblem
+        "403": *serialProblem
+        "422": *serialProblem
+  /api/v1/serials/commission:
+    post:
+      operationId: commissionSerials
+      summary: Ikat label GENERATED ke batch produksi (→ COMMISSIONED)
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommissionRequest"
+      responses:
+        "200":
+          description: Label di-commission
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommissionResponse"
+        "401": *serialProblem
+        "403": *serialProblem
+        "404": *serialProblem
+        "409": *serialProblem
+        "422": *serialProblem
+  /api/v1/serials/receive:
+    post:
+      operationId: receiveSerials
+      summary: Terima hasil produksi (COMMISSIONED → IN_STOCK) ke lokasi sendiri, beserta turunannya
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReceiveSerialsRequest"
+      responses:
+        "200":
+          description: Serial diterima
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReceiveSerialsResponse"
+        "401": *serialProblem
+        "403": *serialProblem
+        "404": *serialProblem
+        "409": *serialProblem
+        "422": *serialProblem
+  /api/v1/serials/aggregate:
+    post:
+      operationId: aggregateSerials
+      summary: Masukkan unit ke karton atau karton ke palet
+      description: >
+        Validasi rank level, spesifikasi kemasan, kapasitas, produk, aturan
+        campuran batch, anak belum punya induk, tanpa siklus. Anak yang sudah
+        ada di induk yang sama dilewati (aman di-retry).
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AggregateRequest"
+      responses:
+        "200":
+          description: Agregasi berhasil
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AggregateResponse"
+        "401": *serialProblem
+        "403": *serialProblem
+        "404": *serialProblem
+        "409": *serialProblem
+        "422": *serialProblem
+  /api/v1/serials/{code}/unpack:
+    post:
+      operationId: unpackSerial
+      summary: Bongkar kemasan (keluarkan semua anak langsung)
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - &serialCodeParam
+          name: code
+          in: path
+          required: true
+          description: Kode serial 16 karakter Crockford Base32 (huruf kecil/tanda hubung dinormalkan)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Kemasan dibongkar
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnpackResponse"
+        "401": *serialProblem
+        "403": *serialProblem
+        "404": *serialProblem
+        "409": *serialProblem
+  /api/v1/serials/{code}/trace:
+    get:
+      operationId: traceSerial
+      summary: Genealogi serial (leluhur, turunan, event, shipment, custodian, scan)
+      description: >
+        Shipment diambil dari riwayat event (unit dan karton/palet yang pernah
+        membungkusnya), jadi tetap terlihat setelah kemasan dibongkar.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - *serialCodeParam
+      responses:
+        "200":
+          description: Genealogi serial
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraceResponse"
+        "401": *serialProblem
+        "403": *serialProblem
+        "404": *serialProblem
+  /api/v1/batches/{id}/recall:
+    post:
+      operationId: recallBatch
+      summary: Recall batch; unit di rantai pasok → QUARANTINED massal (idempotent)
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - &serialIdParam
+          name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecallRequest"
+      responses:
+        "200":
+          description: Batch di-recall
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecallResponse"
+        "401": *serialProblem
+        "403": *serialProblem
+        "404": *serialProblem
+        "422": *serialProblem
+  /api/v1/shipments:
+    post:
+      operationId: createSerialShipment
+      summary: Kirim palet/karton/unit; status dan custodian seluruh turunan berpindah dalam satu statement
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SerialShipmentCreateRequest"
+      responses:
+        "201":
+          description: Shipment dikirim
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SerialShipmentResponse"
+        "401": *serialProblem
+        "403": *serialProblem
+        "404": *serialProblem
+        "409": *serialProblem
+        "422": *serialProblem
+  /api/v1/shipments/{id}/receive:
+    post:
+      operationId: receiveSerialShipment
+      summary: Terima shipment (→ AT_PARTNER di lokasi mitra, IN_STOCK di lokasi sendiri; idempotent)
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - *serialIdParam
+      responses:
+        "200":
+          description: Shipment diterima (atau sudah diterima sebelumnya)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SerialShipmentResponse"
+        "401": *serialProblem
+        "403": *serialProblem
+        "404": *serialProblem
+        "409": *serialProblem
+  /api/v1/loyalty/claims/{id}/review:
+    post:
+      operationId: reviewLoyaltyClaim
+      summary: Review klaim poin (APPROVE/REJECT untuk PENDING, REVERSE untuk APPROVED)
+      description: >
+        REJECT dan REVERSE (clawback, note wajib) membalik poin lewat ledger
+        REVERSE yang idempotent, membebaskan unit untuk pembeli asli, dan
+        mengembalikan serial ke status asalnya (SOLD/AT_PARTNER). Keputusan sama
+        yang dikirim ulang idempotent; keputusan lain untuk klaim yang sudah
+        diputuskan 409 claim_already_decided.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - *serialIdParam
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewClaimRequest"
+      responses:
+        "200":
+          description: Keputusan tersimpan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewClaimResponse"
+        "401": *serialProblem
+        "403": *serialProblem
+        "404": *serialProblem
+        "409": *serialProblem
+        "422": *serialProblem
+  /api/v1/public/verify:
+    post:
+      operationId: verifySerial
+      summary: Verifikasi keaslian produk (publik, tanpa login)
+      description: >
+        Rate limit per IP (IPv4 per alamat, IPv6 per /64; 429 + Retry-After).
+        Server memasang cookie anonim mg_vid untuk fingerprint scan. Respons
+        tidak memuat status internal serial; kode berformat salah langsung
+        NOT_FOUND (tetap direkam untuk hotspot pemalsuan).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublicVerifyRequest"
+      responses:
+        "200":
+          description: Hasil verifikasi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicVerifyResponse"
+        "400": *serialProblem
+        "422": *serialProblem
+        "429": *serialProblem
+  /api/v1/public/claims:
+    post:
+      operationId: claimLoyaltyPoints
+      summary: Klaim poin dengan PIN di dalam kemasan (sesi konsumen)
+      description: >
+        423 claim_locked setelah 5 PIN salah per unit; 409 already_claimed atau
+        claim_not_allowed (unit belum terjual); 403 claim_previously_rejected
+        kalau klaim akun ini untuk unit itu pernah ditolak/dibalik; 422
+        duplicate_code tidak berlaku (satu kode). Rate limit per IP dan per
+        akun (429). Klaim ulang oleh akun yang sama mengembalikan klaim lama
+        dengan status 200 (replayed=true).
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoyaltyClaimRequest"
+      responses:
+        "200":
+          description: Klaim yang sama dikirim ulang
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoyaltyClaimResponse"
+        "201":
+          description: Klaim tercatat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoyaltyClaimResponse"
+        "401": *serialProblem
+        "403": *serialProblem
+        "409": *serialProblem
+        "422": *serialProblem
+        "423": *serialProblem
+        "429": *serialProblem
+  /api/v1/public/loyalty/balance:
+    get:
+      operationId: getLoyaltyBalance
+      summary: Saldo poin konsumen (tersedia vs masih tertahan masa tunggu/review)
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: Saldo poin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoyaltyBalanceResponse"
+        "401": *serialProblem
+        "403": *serialProblem
   # ==== [/serialization] ====
 
   # ==== [inventory] stok, order, pembayaran ====
@@ -351,14 +988,755 @@ components:
       type: apiKey
       in: cookie
       name: __Host-session
+    consumerCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-consumer
     deviceToken:
       type: http
       scheme: bearer
   schemas:
     # ==== [iam] schema di bawah ini ====
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          maxLength: 254
+        password:
+          type: string
+          format: password
+          maxLength: 1024
+    LocationRef:
+      type: object
+      required: [id, code, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+    MeUser:
+      type: object
+      required: [id, email, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        name:
+          type: string
+    MeRole:
+      type: object
+      required: [code, name, scope_mode, locations]
+      properties:
+        code:
+          type: string
+          description: Kode role, mis. ADMIN, CASHIER
+        name:
+          type: string
+        scope_mode:
+          $ref: "#/components/schemas/ScopeMode"
+        locations:
+          type: array
+          description: Hanya terisi untuk scope SELECTED
+          items:
+            $ref: "#/components/schemas/LocationRef"
+    ScopeMode:
+      type: string
+      enum: [ALL, SELECTED]
+    MeScope:
+      type: object
+      description: >
+        Scope lokasi efektif. ALL = semua lokasi (locations kosong). SELECTED =
+        hanya locations; daftar kosong berarti tidak ada akses lokasi.
+      required: [mode, locations]
+      properties:
+        mode:
+          $ref: "#/components/schemas/ScopeMode"
+        locations:
+          type: array
+          items:
+            $ref: "#/components/schemas/LocationRef"
+    MeResponse:
+      type: object
+      required: [user, roles, permissions, scope]
+      properties:
+        user:
+          $ref: "#/components/schemas/MeUser"
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/MeRole"
+        permissions:
+          type: array
+          description: Gabungan permission semua role, urut
+          items:
+            type: string
+        scope:
+          $ref: "#/components/schemas/MeScope"
+    OtpRequest:
+      type: object
+      additionalProperties: false
+      required: [phone]
+      properties:
+        phone:
+          type: string
+          maxLength: 32
+          description: Nomor seluler Indonesia, mis. 0812xxxxxxxx atau +62812xxxxxxxx
+    OtpRequestResponse:
+      type: object
+      required: [expires_at, expires_in_seconds]
+      properties:
+        expires_at:
+          type: string
+          format: date-time
+        expires_in_seconds:
+          type: integer
+    OtpVerifyRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, code]
+      properties:
+        phone:
+          type: string
+          maxLength: 32
+        code:
+          type: string
+          pattern: "^[0-9]{6}$"
+    ConsumerMeResponse:
+      type: object
+      required: [id, phone_masked]
+      properties:
+        id:
+          type: string
+          format: uuid
+        phone_masked:
+          type: string
+          description: Nomor E.164 yang disamarkan, mis. +62812*****890
     # ==== [/iam] ====
 
     # ==== [serialization] ====
+    SerialCodeList:
+      type: array
+      minItems: 1
+      description: Kode serial 16 karakter Crockford Base32; duplikat (setelah normalisasi) ditolak 422
+      items:
+        type: string
+        maxLength: 64
+    MintCodesRequest:
+      type: object
+      additionalProperties: false
+      required: [level_code, qty, printer_vendor]
+      properties:
+        level_code:
+          type: string
+          maxLength: 32
+          description: Kode packaging_levels (UNIT, INNER, CARTON, PALLET)
+        qty:
+          type: integer
+          minimum: 1
+          maximum: 5000
+        product_id:
+          type: string
+          format: uuid
+        printer_vendor:
+          type: string
+          maxLength: 200
+        notes:
+          type: string
+          maxLength: 1000
+    CodeBatch:
+      type: object
+      required: [id, level_code, product_id, qty, printer_vendor, notes, issued_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        level_code:
+          type: string
+        product_id:
+          type: [string, "null"]
+          format: uuid
+        qty:
+          type: integer
+        printer_vendor:
+          type: string
+        notes:
+          type: [string, "null"]
+        issued_at:
+          type: string
+          format: date-time
+    MintedCode:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+        pin:
+          type: string
+          description: PIN klaim (hanya level UNIT); hanya dikirim sekali di respons mint
+    MintCodesResponse:
+      type: object
+      required: [code_batch, codes]
+      properties:
+        code_batch:
+          $ref: "#/components/schemas/CodeBatch"
+        codes:
+          type: array
+          items:
+            $ref: "#/components/schemas/MintedCode"
+    CommissionRequest:
+      type: object
+      additionalProperties: false
+      required: [batch_id, codes]
+      properties:
+        batch_id:
+          type: string
+          format: uuid
+        codes:
+          allOf:
+            - $ref: "#/components/schemas/SerialCodeList"
+          maxItems: 5000
+    CommissionResponse:
+      type: object
+      required: [batch_id, product_id, commissioned]
+      properties:
+        batch_id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+        commissioned:
+          type: integer
+    ReceiveSerialsRequest:
+      type: object
+      additionalProperties: false
+      required: [location_id, codes]
+      properties:
+        location_id:
+          type: string
+          format: uuid
+        codes:
+          allOf:
+            - $ref: "#/components/schemas/SerialCodeList"
+          maxItems: 5000
+    ReceiveSerialsResponse:
+      type: object
+      required: [location_id, roots, serials]
+      properties:
+        location_id:
+          type: string
+          format: uuid
+        roots:
+          type: integer
+        serials:
+          type: integer
+          format: int64
+    AggregateRequest:
+      type: object
+      additionalProperties: false
+      required: [parent_code, child_codes]
+      properties:
+        parent_code:
+          type: string
+          maxLength: 64
+        child_codes:
+          allOf:
+            - $ref: "#/components/schemas/SerialCodeList"
+          maxItems: 1000
+    AggregateResponse:
+      type: object
+      required: [parent_code, added, already_in_parent, child_count, capacity]
+      properties:
+        parent_code:
+          type: string
+        added:
+          type: integer
+        already_in_parent:
+          type: integer
+        child_count:
+          type: integer
+          format: int64
+        capacity:
+          type: integer
+    UnpackResponse:
+      type: object
+      required: [code, unpacked]
+      properties:
+        code:
+          type: string
+        unpacked:
+          type: integer
+          format: int64
+    RecallRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          maxLength: 1000
+    RecallResponse:
+      type: object
+      required: [batch_id, status, recalled_at, quarantined, already_recalled]
+      properties:
+        batch_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          const: RECALLED
+        recalled_at:
+          type: string
+          format: date-time
+        quarantined:
+          type: integer
+          format: int64
+        already_recalled:
+          type: boolean
+    SerialShipmentCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [from_location_id, to_location_id, codes]
+      properties:
+        from_location_id:
+          type: string
+          format: uuid
+        to_location_id:
+          type: string
+          format: uuid
+        to_party_id:
+          type: string
+          format: uuid
+          description: Default party pemilik lokasi tujuan
+        program_code:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Program harga, mis. SUBSIDI_SULSEL_Q4
+        codes:
+          allOf:
+            - $ref: "#/components/schemas/SerialCodeList"
+          maxItems: 500
+    SerialShipmentItem:
+      type: object
+      required: [serial_unit_id, product_id, qty]
+      properties:
+        serial_unit_id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+        qty:
+          type: integer
+    SerialShipmentResponse:
+      type: object
+      required: [id, code, status, from_location_id, to_location_id, to_party_id, program_code,
+                 shipped_at, received_at, items, units, serials, skipped, already_received]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        status:
+          type: string
+          enum: [DRAFT, SHIPPED, RECEIVED, CANCELLED]
+        from_location_id:
+          type: string
+          format: uuid
+        to_location_id:
+          type: string
+          format: uuid
+        to_party_id:
+          type: [string, "null"]
+          format: uuid
+        program_code:
+          type: [string, "null"]
+        shipped_at:
+          type: [string, "null"]
+          format: date-time
+        received_at:
+          type: [string, "null"]
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SerialShipmentItem"
+        units:
+          type: integer
+          format: int64
+        serials:
+          type: integer
+          format: int64
+          description: Serial (semua level) yang berubah status oleh request ini
+        skipped:
+          type: integer
+          format: int64
+        already_received:
+          type: boolean
+    TraceRef:
+      type: object
+      required: [id, code, name]
+      properties:
+        id:
+          type: [string, "null"]
+          format: uuid
+        code:
+          type: [string, "null"]
+        name:
+          type: [string, "null"]
+    TraceLot:
+      type: object
+      required: [id, lot_no, status, exp_date]
+      properties:
+        id:
+          type: string
+          format: uuid
+        lot_no:
+          type: [string, "null"]
+        status:
+          type: [string, "null"]
+        exp_date:
+          type: [string, "null"]
+          format: date-time
+    TraceSerial:
+      type: object
+      required: [id, code, level_code, status, parent_id, product, batch, location, custodian,
+                 commissioned_at, verify_count, first_verified_at, first_verified_city]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        level_code:
+          type: string
+        status:
+          type: string
+        parent_id:
+          type: [string, "null"]
+          format: uuid
+        product:
+          oneOf:
+            - $ref: "#/components/schemas/TraceRef"
+            - type: "null"
+        batch:
+          oneOf:
+            - $ref: "#/components/schemas/TraceLot"
+            - type: "null"
+        location:
+          oneOf:
+            - $ref: "#/components/schemas/TraceRef"
+            - type: "null"
+        custodian:
+          oneOf:
+            - $ref: "#/components/schemas/TraceRef"
+            - type: "null"
+        commissioned_at:
+          type: [string, "null"]
+          format: date-time
+        verify_count:
+          type: integer
+        first_verified_at:
+          type: [string, "null"]
+          format: date-time
+        first_verified_city:
+          type: [string, "null"]
+    TraceAncestor:
+      type: object
+      required: [id, code, level_code, status, depth]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        level_code:
+          type: string
+        status:
+          type: string
+        depth:
+          type: integer
+          description: 1 = induk langsung
+    TraceDescendant:
+      type: object
+      required: [level_code, status, count]
+      properties:
+        level_code:
+          type: string
+        status:
+          type: string
+        count:
+          type: integer
+          format: int64
+    TraceEvent:
+      type: object
+      required: [id, biz_step, from_status, to_status, parent_code, location_code, party_name,
+                 actor_type, ref_type, ref_id, occurred_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        biz_step:
+          type: string
+        from_status:
+          type: [string, "null"]
+        to_status:
+          type: [string, "null"]
+        parent_code:
+          type: [string, "null"]
+        location_code:
+          type: [string, "null"]
+        party_name:
+          type: [string, "null"]
+        actor_type:
+          type: string
+          enum: [USER, DEVICE, SYSTEM, CONSUMER]
+        ref_type:
+          type: [string, "null"]
+        ref_id:
+          type: [string, "null"]
+          format: uuid
+        occurred_at:
+          type: string
+          format: date-time
+    TraceShipment:
+      type: object
+      required: [id, code, status, program_code, from_location_code, to_location_code, to_party_name,
+                 via_code, shipped_at, received_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        status:
+          type: string
+        program_code:
+          type: [string, "null"]
+        from_location_code:
+          type: string
+        to_location_code:
+          type: string
+        to_party_name:
+          type: [string, "null"]
+        via_code:
+          type: string
+          description: Kode serial (unit/karton/palet) yang tercatat di shipment_items
+        shipped_at:
+          type: [string, "null"]
+          format: date-time
+        received_at:
+          type: [string, "null"]
+          format: date-time
+    TraceScan:
+      type: object
+      required: [id, context, result, geo_source, region_code, region_name, rule_hits, occurred_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        context:
+          type: string
+        result:
+          $ref: "#/components/schemas/VerifyResult"
+        geo_source:
+          type: string
+          enum: [GPS, IP, NONE]
+        region_code:
+          type: [string, "null"]
+        region_name:
+          type: [string, "null"]
+        rule_hits:
+          type: array
+          items:
+            type: string
+        occurred_at:
+          type: string
+          format: date-time
+    TraceResponse:
+      type: object
+      required: [serial, ancestors, descendants, events, shipments, scans]
+      properties:
+        serial:
+          $ref: "#/components/schemas/TraceSerial"
+        ancestors:
+          type: array
+          items:
+            $ref: "#/components/schemas/TraceAncestor"
+        descendants:
+          type: array
+          items:
+            $ref: "#/components/schemas/TraceDescendant"
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/TraceEvent"
+        shipments:
+          type: array
+          items:
+            $ref: "#/components/schemas/TraceShipment"
+        scans:
+          type: array
+          items:
+            $ref: "#/components/schemas/TraceScan"
+    VerifyResult:
+      type: string
+      enum: [GENUINE_FIRST, GENUINE_REPEAT, SUSPICIOUS, NOT_FOUND, RECALLED]
+    PublicVerifyRequest:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+          maxLength: 512
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+          description: Wajib berpasangan dengan lng
+        lng:
+          type: number
+          minimum: -180
+          maximum: 180
+        accuracy_m:
+          type: integer
+          minimum: 0
+          maximum: 100000
+    PublicVerifyResponse:
+      type: object
+      required: [result]
+      properties:
+        result:
+          $ref: "#/components/schemas/VerifyResult"
+        product:
+          type: object
+          description: Hanya untuk GENUINE_* dan RECALLED
+          required: [name, lot_no, exp_date]
+          properties:
+            name:
+              type: [string, "null"]
+            lot_no:
+              type: [string, "null"]
+            exp_date:
+              type: [string, "null"]
+              format: date-time
+        first_verified_at:
+          type: string
+          format: date-time
+        first_verified_city:
+          type: string
+    LoyaltyClaimRequest:
+      type: object
+      additionalProperties: false
+      required: [code, pin]
+      properties:
+        code:
+          type: string
+          maxLength: 64
+        pin:
+          type: string
+          maxLength: 64
+          description: PIN 10 karakter di dalam kemasan
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lng:
+          type: number
+          minimum: -180
+          maximum: 180
+        accuracy_m:
+          type: integer
+          minimum: 0
+          maximum: 100000
+    LoyaltyClaimStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED, REVERSED]
+    LoyaltyClaimResponse:
+      type: object
+      required: [claim_id, status, points, available_at, replayed]
+      properties:
+        claim_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/LoyaltyClaimStatus"
+        points:
+          type: integer
+          format: int64
+        available_at:
+          type: string
+          format: date-time
+        replayed:
+          type: boolean
+    LoyaltyBalanceResponse:
+      type: object
+      required: [available, pending]
+      properties:
+        available:
+          type: integer
+          format: int64
+        pending:
+          type: integer
+          format: int64
+    ReviewClaimRequest:
+      type: object
+      additionalProperties: false
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [APPROVE, REJECT, REVERSE]
+          description: APPROVE/REJECT untuk klaim PENDING; REVERSE (clawback) untuk klaim APPROVED
+        note:
+          type: string
+          maxLength: 1000
+          description: Alasan; wajib untuk REVERSE
+    ReviewClaimResponse:
+      type: object
+      required: [claim_id, status, points, risk_score, risk_reasons, review_required, available_at, decided_at]
+      properties:
+        claim_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/LoyaltyClaimStatus"
+        points:
+          type: integer
+          format: int64
+        risk_score:
+          type: integer
+          minimum: 0
+          maximum: 100
+        risk_reasons:
+          type: array
+          items:
+            type: object
+            required: [rule, weight]
+            properties:
+              rule:
+                type: string
+              weight:
+                type: integer
+        review_required:
+          type: boolean
+        available_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: [string, "null"]
+          format: date-time
     # ==== [/serialization] ====
 
     # ==== [inventory] ====

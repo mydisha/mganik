@@ -38,6 +38,382 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Login staff dengan email + password
+         * @description Sukses memasang cookie `__Host-session` (HttpOnly, Secure, SameSite=Lax, idle 8 jam, absolut 12 jam) dan mengembalikan profil seperti /auth/me. Gagal memakai pesan generik yang sama untuk email tidak dikenal maupun password salah. Percobaan dibatasi per email (5) dan per IP (20) dalam 15 menit; jatah dipesan sebelum password diverifikasi, jadi request paralel tidak bisa melewatinya. Login sukses tidak memakan jatah IP.
+         */
+        post: operations["login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mencabut sesi staff dan menghapus cookie
+         * @description Idempotent; selalu 204 walau sesi sudah kedaluwarsa atau tidak ada.
+         */
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Profil staff yang sedang login, role, permission, dan scope lokasi */
+        get: operations["getMe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/otp/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Minta kode OTP login konsumen (mock)
+         * @description Nomor dinormalkan ke E.164 Indonesia (+628...). Prototype memakai kode OTP tetap (OTP_MOCK_CODE) yang tidak pernah dikembalikan di respons; dimatikan (503 otp_unavailable) di production tanpa izin demo. Dibatasi 5 permintaan per nomor dan 20 per IP dalam 15 menit.
+         */
+        post: operations["requestConsumerOtp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/otp/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verifikasi OTP dan buat sesi konsumen
+         * @description Sukses memasang cookie `__Host-consumer` (idle 24 jam, absolut 7 hari). Maksimal 5 percobaan per kode; setelah itu minta kode baru. Cookie konsumen lama (bila ada) dicabut dan diganti.
+         */
+        post: operations["verifyConsumerOtp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/consumer/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Konsumen yang sedang login (nomor disamarkan)
+         * @description Butuh cookie `__Host-consumer` dari /public/otp/verify.
+         */
+        get: operations["getConsumerMe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/consumer/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mencabut sesi konsumen dan menghapus cookie
+         * @description Idempotent; memakai cookie `__Host-consumer` bila ada.
+         */
+        post: operations["logoutConsumer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/code-batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mint kode serial acak 80-bit (dan PIN klaim untuk UNIT) untuk satu job cetak
+         * @description Permission code.mint. Kode dan PIN plaintext hanya dikembalikan sekali di respons ini sebagai bahan file cetak; DB hanya menyimpan HMAC PIN.
+         */
+        post: operations["mintCodes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/serials/commission": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ikat label GENERATED ke batch produksi (→ COMMISSIONED) */
+        post: operations["commissionSerials"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/serials/receive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Terima hasil produksi (COMMISSIONED → IN_STOCK) ke lokasi sendiri, beserta turunannya */
+        post: operations["receiveSerials"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/serials/aggregate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Masukkan unit ke karton atau karton ke palet
+         * @description Validasi rank level, spesifikasi kemasan, kapasitas, produk, aturan campuran batch, anak belum punya induk, tanpa siklus. Anak yang sudah ada di induk yang sama dilewati (aman di-retry).
+         */
+        post: operations["aggregateSerials"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/serials/{code}/unpack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bongkar kemasan (keluarkan semua anak langsung) */
+        post: operations["unpackSerial"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/serials/{code}/trace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Genealogi serial (leluhur, turunan, event, shipment, custodian, scan)
+         * @description Shipment diambil dari riwayat event (unit dan karton/palet yang pernah membungkusnya), jadi tetap terlihat setelah kemasan dibongkar.
+         */
+        get: operations["traceSerial"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/batches/{id}/recall": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Recall batch; unit di rantai pasok → QUARANTINED massal (idempotent) */
+        post: operations["recallBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/shipments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Kirim palet/karton/unit; status dan custodian seluruh turunan berpindah dalam satu statement */
+        post: operations["createSerialShipment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/shipments/{id}/receive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Terima shipment (→ AT_PARTNER di lokasi mitra, IN_STOCK di lokasi sendiri; idempotent) */
+        post: operations["receiveSerialShipment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/loyalty/claims/{id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review klaim poin (APPROVE/REJECT untuk PENDING, REVERSE untuk APPROVED)
+         * @description REJECT dan REVERSE (clawback, note wajib) membalik poin lewat ledger REVERSE yang idempotent, membebaskan unit untuk pembeli asli, dan mengembalikan serial ke status asalnya (SOLD/AT_PARTNER). Keputusan sama yang dikirim ulang idempotent; keputusan lain untuk klaim yang sudah diputuskan 409 claim_already_decided.
+         */
+        post: operations["reviewLoyaltyClaim"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verifikasi keaslian produk (publik, tanpa login)
+         * @description Rate limit per IP (IPv4 per alamat, IPv6 per /64; 429 + Retry-After). Server memasang cookie anonim mg_vid untuk fingerprint scan. Respons tidak memuat status internal serial; kode berformat salah langsung NOT_FOUND (tetap direkam untuk hotspot pemalsuan).
+         */
+        post: operations["verifySerial"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/claims": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Klaim poin dengan PIN di dalam kemasan (sesi konsumen)
+         * @description 423 claim_locked setelah 5 PIN salah per unit; 409 already_claimed atau claim_not_allowed (unit belum terjual); 403 claim_previously_rejected kalau klaim akun ini untuk unit itu pernah ditolak/dibalik; 422 duplicate_code tidak berlaku (satu kode). Rate limit per IP dan per akun (429). Klaim ulang oleh akun yang sama mengembalikan klaim lama dengan status 200 (replayed=true).
+         */
+        post: operations["claimLoyaltyPoints"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/loyalty/balance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Saldo poin konsumen (tersedia vs masih tertahan masa tunggu/review) */
+        get: operations["getLoyaltyBalance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/inventory/balances": {
         parameters: {
             query?: never;
@@ -222,6 +598,377 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        LoginRequest: {
+            email: string;
+            /** Format: password */
+            password: string;
+        };
+        LocationRef: {
+            /** Format: uuid */
+            id: string;
+            code: string;
+            name: string;
+        };
+        MeUser: {
+            /** Format: uuid */
+            id: string;
+            email: string;
+            name: string;
+        };
+        MeRole: {
+            /** @description Kode role, mis. ADMIN, CASHIER */
+            code: string;
+            name: string;
+            scope_mode: components["schemas"]["ScopeMode"];
+            /** @description Hanya terisi untuk scope SELECTED */
+            locations: components["schemas"]["LocationRef"][];
+        };
+        /** @enum {string} */
+        ScopeMode: "ALL" | "SELECTED";
+        /** @description Scope lokasi efektif. ALL = semua lokasi (locations kosong). SELECTED = hanya locations; daftar kosong berarti tidak ada akses lokasi. */
+        MeScope: {
+            mode: components["schemas"]["ScopeMode"];
+            locations: components["schemas"]["LocationRef"][];
+        };
+        MeResponse: {
+            user: components["schemas"]["MeUser"];
+            roles: components["schemas"]["MeRole"][];
+            /** @description Gabungan permission semua role, urut */
+            permissions: string[];
+            scope: components["schemas"]["MeScope"];
+        };
+        OtpRequest: {
+            /** @description Nomor seluler Indonesia, mis. 0812xxxxxxxx atau +62812xxxxxxxx */
+            phone: string;
+        };
+        OtpRequestResponse: {
+            /** Format: date-time */
+            expires_at: string;
+            expires_in_seconds: number;
+        };
+        OtpVerifyRequest: {
+            phone: string;
+            code: string;
+        };
+        ConsumerMeResponse: {
+            /** Format: uuid */
+            id: string;
+            /** @description Nomor E.164 yang disamarkan, mis. +62812*****890 */
+            phone_masked: string;
+        };
+        /** @description Kode serial 16 karakter Crockford Base32; duplikat (setelah normalisasi) ditolak 422 */
+        SerialCodeList: string[];
+        MintCodesRequest: {
+            /** @description Kode packaging_levels (UNIT, INNER, CARTON, PALLET) */
+            level_code: string;
+            qty: number;
+            /** Format: uuid */
+            product_id?: string;
+            printer_vendor: string;
+            notes?: string;
+        };
+        CodeBatch: {
+            /** Format: uuid */
+            id: string;
+            level_code: string;
+            /** Format: uuid */
+            product_id: string | null;
+            qty: number;
+            printer_vendor: string;
+            notes: string | null;
+            /** Format: date-time */
+            issued_at: string;
+        };
+        MintedCode: {
+            code: string;
+            /** @description PIN klaim (hanya level UNIT); hanya dikirim sekali di respons mint */
+            pin?: string;
+        };
+        MintCodesResponse: {
+            code_batch: components["schemas"]["CodeBatch"];
+            codes: components["schemas"]["MintedCode"][];
+        };
+        CommissionRequest: {
+            /** Format: uuid */
+            batch_id: string;
+            codes: components["schemas"]["SerialCodeList"];
+        };
+        CommissionResponse: {
+            /** Format: uuid */
+            batch_id: string;
+            /** Format: uuid */
+            product_id: string;
+            commissioned: number;
+        };
+        ReceiveSerialsRequest: {
+            /** Format: uuid */
+            location_id: string;
+            codes: components["schemas"]["SerialCodeList"];
+        };
+        ReceiveSerialsResponse: {
+            /** Format: uuid */
+            location_id: string;
+            roots: number;
+            /** Format: int64 */
+            serials: number;
+        };
+        AggregateRequest: {
+            parent_code: string;
+            child_codes: components["schemas"]["SerialCodeList"];
+        };
+        AggregateResponse: {
+            parent_code: string;
+            added: number;
+            already_in_parent: number;
+            /** Format: int64 */
+            child_count: number;
+            capacity: number;
+        };
+        UnpackResponse: {
+            code: string;
+            /** Format: int64 */
+            unpacked: number;
+        };
+        RecallRequest: {
+            reason: string;
+        };
+        RecallResponse: {
+            /** Format: uuid */
+            batch_id: string;
+            /** @constant */
+            status: "RECALLED";
+            /** Format: date-time */
+            recalled_at: string;
+            /** Format: int64 */
+            quarantined: number;
+            already_recalled: boolean;
+        };
+        SerialShipmentCreateRequest: {
+            /** Format: uuid */
+            from_location_id: string;
+            /** Format: uuid */
+            to_location_id: string;
+            /**
+             * Format: uuid
+             * @description Default party pemilik lokasi tujuan
+             */
+            to_party_id?: string;
+            /** @description Program harga, mis. SUBSIDI_SULSEL_Q4 */
+            program_code?: string;
+            codes: components["schemas"]["SerialCodeList"];
+        };
+        SerialShipmentItem: {
+            /** Format: uuid */
+            serial_unit_id: string;
+            /** Format: uuid */
+            product_id: string;
+            qty: number;
+        };
+        SerialShipmentResponse: {
+            /** Format: uuid */
+            id: string;
+            code: string;
+            /** @enum {string} */
+            status: "DRAFT" | "SHIPPED" | "RECEIVED" | "CANCELLED";
+            /** Format: uuid */
+            from_location_id: string;
+            /** Format: uuid */
+            to_location_id: string;
+            /** Format: uuid */
+            to_party_id: string | null;
+            program_code: string | null;
+            /** Format: date-time */
+            shipped_at: string | null;
+            /** Format: date-time */
+            received_at: string | null;
+            items: components["schemas"]["SerialShipmentItem"][];
+            /** Format: int64 */
+            units: number;
+            /**
+             * Format: int64
+             * @description Serial (semua level) yang berubah status oleh request ini
+             */
+            serials: number;
+            /** Format: int64 */
+            skipped: number;
+            already_received: boolean;
+        };
+        TraceRef: {
+            /** Format: uuid */
+            id: string | null;
+            code: string | null;
+            name: string | null;
+        };
+        TraceLot: {
+            /** Format: uuid */
+            id: string;
+            lot_no: string | null;
+            status: string | null;
+            /** Format: date-time */
+            exp_date: string | null;
+        };
+        TraceSerial: {
+            /** Format: uuid */
+            id: string;
+            code: string;
+            level_code: string;
+            status: string;
+            /** Format: uuid */
+            parent_id: string | null;
+            product: components["schemas"]["TraceRef"] | null;
+            batch: components["schemas"]["TraceLot"] | null;
+            location: components["schemas"]["TraceRef"] | null;
+            custodian: components["schemas"]["TraceRef"] | null;
+            /** Format: date-time */
+            commissioned_at: string | null;
+            verify_count: number;
+            /** Format: date-time */
+            first_verified_at: string | null;
+            first_verified_city: string | null;
+        };
+        TraceAncestor: {
+            /** Format: uuid */
+            id: string;
+            code: string;
+            level_code: string;
+            status: string;
+            /** @description 1 = induk langsung */
+            depth: number;
+        };
+        TraceDescendant: {
+            level_code: string;
+            status: string;
+            /** Format: int64 */
+            count: number;
+        };
+        TraceEvent: {
+            /** Format: uuid */
+            id: string;
+            biz_step: string;
+            from_status: string | null;
+            to_status: string | null;
+            parent_code: string | null;
+            location_code: string | null;
+            party_name: string | null;
+            /** @enum {string} */
+            actor_type: "USER" | "DEVICE" | "SYSTEM" | "CONSUMER";
+            ref_type: string | null;
+            /** Format: uuid */
+            ref_id: string | null;
+            /** Format: date-time */
+            occurred_at: string;
+        };
+        TraceShipment: {
+            /** Format: uuid */
+            id: string;
+            code: string;
+            status: string;
+            program_code: string | null;
+            from_location_code: string;
+            to_location_code: string;
+            to_party_name: string | null;
+            /** @description Kode serial (unit/karton/palet) yang tercatat di shipment_items */
+            via_code: string;
+            /** Format: date-time */
+            shipped_at: string | null;
+            /** Format: date-time */
+            received_at: string | null;
+        };
+        TraceScan: {
+            /** Format: uuid */
+            id: string;
+            context: string;
+            result: components["schemas"]["VerifyResult"];
+            /** @enum {string} */
+            geo_source: "GPS" | "IP" | "NONE";
+            region_code: string | null;
+            region_name: string | null;
+            rule_hits: string[];
+            /** Format: date-time */
+            occurred_at: string;
+        };
+        TraceResponse: {
+            serial: components["schemas"]["TraceSerial"];
+            ancestors: components["schemas"]["TraceAncestor"][];
+            descendants: components["schemas"]["TraceDescendant"][];
+            events: components["schemas"]["TraceEvent"][];
+            shipments: components["schemas"]["TraceShipment"][];
+            scans: components["schemas"]["TraceScan"][];
+        };
+        /** @enum {string} */
+        VerifyResult: "GENUINE_FIRST" | "GENUINE_REPEAT" | "SUSPICIOUS" | "NOT_FOUND" | "RECALLED";
+        PublicVerifyRequest: {
+            code: string;
+            /** @description Wajib berpasangan dengan lng */
+            lat?: number;
+            lng?: number;
+            accuracy_m?: number;
+        };
+        PublicVerifyResponse: {
+            result: components["schemas"]["VerifyResult"];
+            /** @description Hanya untuk GENUINE_* dan RECALLED */
+            product?: {
+                name: string | null;
+                lot_no: string | null;
+                /** Format: date-time */
+                exp_date: string | null;
+            };
+            /** Format: date-time */
+            first_verified_at?: string;
+            first_verified_city?: string;
+        };
+        LoyaltyClaimRequest: {
+            code: string;
+            /** @description PIN 10 karakter di dalam kemasan */
+            pin: string;
+            lat?: number;
+            lng?: number;
+            accuracy_m?: number;
+        };
+        /** @enum {string} */
+        LoyaltyClaimStatus: "PENDING" | "APPROVED" | "REJECTED" | "REVERSED";
+        LoyaltyClaimResponse: {
+            /** Format: uuid */
+            claim_id: string;
+            status: components["schemas"]["LoyaltyClaimStatus"];
+            /** Format: int64 */
+            points: number;
+            /** Format: date-time */
+            available_at: string;
+            replayed: boolean;
+        };
+        LoyaltyBalanceResponse: {
+            /** Format: int64 */
+            available: number;
+            /** Format: int64 */
+            pending: number;
+        };
+        ReviewClaimRequest: {
+            /**
+             * @description APPROVE/REJECT untuk klaim PENDING; REVERSE (clawback) untuk klaim APPROVED
+             * @enum {string}
+             */
+            decision: "APPROVE" | "REJECT" | "REVERSE";
+            /** @description Alasan; wajib untuk REVERSE */
+            note?: string;
+        };
+        ReviewClaimResponse: {
+            /** Format: uuid */
+            claim_id: string;
+            status: components["schemas"]["LoyaltyClaimStatus"];
+            /** Format: int64 */
+            points: number;
+            risk_score: number;
+            risk_reasons: {
+                rule: string;
+                weight: number;
+            }[];
+            review_required: boolean;
+            /** Format: date-time */
+            available_at: string;
+            /** Format: date-time */
+            decided_at: string | null;
+        };
         InventoryBalanceItem: {
             /** Format: uuid */
             location_id: string;
@@ -577,6 +1324,1203 @@ export interface operations {
             };
             /** @description Belum siap */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Login berhasil */
+            200: {
+                headers: {
+                    /** @description __Host-session=<token>; Path=/; Max-Age=43200; HttpOnly; Secure; SameSite=Lax */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description invalid_credentials (email atau password salah) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description account_disabled, atau csrf_rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description too_many_attempts; detail memuat menit tunggu */
+            429: {
+                headers: {
+                    /** @description Detik sampai boleh mencoba lagi */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description server_busy (verifikasi password bersamaan penuh); coba lagi */
+            503: {
+                headers: {
+                    /** @description Detik sampai boleh mencoba lagi */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sesi dicabut (kalau ada) dan cookie dihapus */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Lihat field code (problem+json) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Profil */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            /** @description unauthenticated atau session_expired */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Pemanggil bukan staff (mis. token device) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    requestConsumerOtp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OtpRequest"];
+            };
+        };
+        responses: {
+            /** @description Kode dikirim (respons sama untuk nomor baru maupun lama) */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OtpRequestResponse"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description too_many_attempts; detail memuat menit tunggu */
+            429: {
+                headers: {
+                    /** @description Detik sampai boleh mencoba lagi */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    verifyConsumerOtp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OtpVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Login konsumen berhasil */
+            200: {
+                headers: {
+                    /** @description __Host-consumer=<token>; Path=/; Max-Age=604800; HttpOnly; Secure; SameSite=Lax */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsumerMeResponse"];
+                };
+            };
+            /** @description otp_invalid (kode salah atau kedaluwarsa) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description consumer_blocked atau csrf_rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description too_many_attempts; detail memuat menit tunggu */
+            429: {
+                headers: {
+                    /** @description Detik sampai boleh mencoba lagi */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getConsumerMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Profil konsumen */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsumerMeResponse"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    logoutConsumer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sesi dicabut (kalau ada) dan cookie dihapus */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Lihat field code (problem+json) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    mintCodes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MintCodesRequest"];
+            };
+        };
+        responses: {
+            /** @description Job cetak dibuat */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MintCodesResponse"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    commissionSerials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommissionRequest"];
+            };
+        };
+        responses: {
+            /** @description Label di-commission */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommissionResponse"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    receiveSerials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReceiveSerialsRequest"];
+            };
+        };
+        responses: {
+            /** @description Serial diterima */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReceiveSerialsResponse"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    aggregateSerials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AggregateRequest"];
+            };
+        };
+        responses: {
+            /** @description Agregasi berhasil */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AggregateResponse"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    unpackSerial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Kode serial 16 karakter Crockford Base32 (huruf kecil/tanda hubung dinormalkan) */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Kemasan dibongkar */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnpackResponse"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    traceSerial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Kode serial 16 karakter Crockford Base32 (huruf kecil/tanda hubung dinormalkan) */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Genealogi serial */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TraceResponse"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    recallBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecallRequest"];
+            };
+        };
+        responses: {
+            /** @description Batch di-recall */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecallResponse"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createSerialShipment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SerialShipmentCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Shipment dikirim */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SerialShipmentResponse"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    receiveSerialShipment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Shipment diterima (atau sudah diterima sebelumnya) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SerialShipmentResponse"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    reviewLoyaltyClaim: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewClaimRequest"];
+            };
+        };
+        responses: {
+            /** @description Keputusan tersimpan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewClaimResponse"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    verifySerial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Hasil verifikasi */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicVerifyResponse"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    claimLoyaltyPoints: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoyaltyClaimRequest"];
+            };
+        };
+        responses: {
+            /** @description Klaim yang sama dikirim ulang */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoyaltyClaimResponse"];
+                };
+            };
+            /** @description Klaim tercatat */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoyaltyClaimResponse"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getLoyaltyBalance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saldo poin */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoyaltyBalanceResponse"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Error domain (application/problem+json, kode di field code) */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

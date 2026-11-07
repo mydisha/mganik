@@ -19,7 +19,12 @@ SEED_DEMO_PASSWORD ?= mganik-demo-2026
 # config.DemoWebhookSecret). RUN_WORKER=false mematikan sweeper/outbox di `make api`.
 WEBHOOK_SECRET ?= demo-webhook-secret-ganti-sebelum-dipakai-sungguhan
 RUN_WORKER ?= true
-export CLAIM_PEPPER SEED_DEMO_PASSWORD WEBHOOK_SECRET RUN_WORKER
+PII_ENC_KEY ?= demo-pii-enc-key-ganti-sebelum-dipakai-sungguhan
+OTP_MOCK_CODE ?= 246810
+# Vite dev server (port 5173) mem-proxy /api dengan changeOrigin, jadi
+# origin-nya didaftarkan untuk cek CSRF `make api`.
+ALLOWED_ORIGINS ?= http://localhost:5173,http://127.0.0.1:5173
+export CLAIM_PEPPER SEED_DEMO_PASSWORD WEBHOOK_SECRET RUN_WORKER PII_ENC_KEY OTP_MOCK_CODE ALLOWED_ORIGINS
 
 .DEFAULT_GOAL := help
 .PHONY: help up down logs ps clean db migrate seed demo-data api web test test-api test-web lint gen hooks

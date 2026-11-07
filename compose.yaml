@@ -19,11 +19,21 @@ x-api-env: &api-env
   DATABASE_URL: postgres://mganik:${POSTGRES_PASSWORD:-mganik}@db:5432/mganik?sslmode=disable
   LOG_LEVEL: ${LOG_LEVEL:-info}
   LOG_FORMAT: json
-  # Hanya nginx (container web) yang berdiri di depan api.
-  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+  # Hanya nginx (container web, IP statis di jaringan proyek) yang dipercaya
+  # untuk X-Forwarded-For. Peer lain, termasuk host yang memanggil port API
+  # langsung lewat gateway docker, memakai IP peer-nya sendiri.
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-${COMPOSE_WEB_IP:-172.31.250.10}}
   # Kunci HMAC hash PIN klaim (min. 32 byte di production). Default ini hanya
   # untuk demo lokal; ganti lewat .env sebelum stack dibuka ke jaringan lain.
   CLAIM_PEPPER: ${CLAIM_PEPPER:-demo-claim-pepper-ganti-sebelum-dipakai-sungguhan}
+  # Kunci induk PII konsumen (enkripsi nomor HP + blind index), min. 32 byte
+  # di production. Default demo; aturan sama dengan CLAIM_PEPPER.
+  PII_ENC_KEY: ${PII_ENC_KEY:-demo-pii-enc-key-ganti-sebelum-dipakai-sungguhan}
+  # Kode OTP mock login konsumen (belum ada pengirim SMS). Hanya untuk demo.
+  OTP_MOCK_CODE: ${OTP_MOCK_CODE:-246810}
+  # Origin SPA (nginx meneruskan Host tanpa port, jadi origin dicocokkan lewat
+  # daftar ini untuk cek CSRF request ber-cookie).
+  ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:${WEB_PORT:-8088},http://127.0.0.1:${WEB_PORT:-8088}}
   # Compose ini adalah stack demo lokal: APP_ENV=production tetapi memakai pepper
   # dan akun demo yang nilainya publik di repo. Config menolak nilai demo di
   # production kecuali izin ini true; api dan migrate menulis WARN saat start.
@@ -96,6 +106,20 @@ services:
       api:
         condition: service_healthy
     restart: unless-stopped
+    networks:
+      default:
+        # IP tetap supaya api bisa memercayai XFF hanya dari nginx.
+        ipv4_address: ${COMPOSE_WEB_IP:-172.31.250.10}
+
+# Subnet tetap untuk jaringan proyek. IP dinamis container lain diambil dari
+# ip_range (separuh atas), jadi IP statis web (separuh bawah) tidak bentrok.
+# Kalau subnet bentrok dengan jaringan lain di host, ubah ketiga nilai di .env.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${COMPOSE_SUBNET:-172.31.250.0/24}
+          ip_range: ${COMPOSE_IP_RANGE:-172.31.250.128/25}
 
 volumes:
   pgdata:
