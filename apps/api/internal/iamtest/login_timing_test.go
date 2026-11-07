@@ -54,10 +54,28 @@ func TestLogin_UnknownEmailCostsSameAsWrongPassword(t *testing.T) {
 		slices.Sort(ds)
 		return ds[len(ds)/2]
 	}
+	// Pembanding = biaya argon2id murni, bukan login dengan password salah:
+	// jalur itu juga menulis audit + counter lockout ke DB, dan di runner CI
+	// dengan -race biaya tulis itu bisa melebihi argon2 sehingga rasio
+	// known/unknown goyah. Yang dibuktikan test ini: email tak dikenal ikut
+	// membayar argon2id.
+	verifyCost := func() time.Duration {
+		var ds []time.Duration
+		for range 5 {
+			start := time.Now()
+			if _, err := domain.VerifyPassword("salah-salah", hash); err != nil {
+				t.Fatal(err)
+			}
+			ds = append(ds, time.Since(start))
+		}
+		slices.Sort(ds)
+		return ds[len(ds)/2]
+	}()
 	known := measure("berat@mganik.test")
 	unknown := measure("tidak.ada@mganik.test")
-	t.Logf("median password salah %v, email tak dikenal %v", known, unknown)
-	if unknown < known/2 {
-		t.Fatalf("email tak dikenal jauh lebih cepat (%v vs %v): hash dummy tidak dijalankan", unknown, known)
+	t.Logf("median argon2 %v, password salah %v, email tak dikenal %v", verifyCost, known, unknown)
+	// Tanpa hash dummy, email tak dikenal ~1 ms: jauh di bawah separuh biaya argon2.
+	if unknown < verifyCost/2 {
+		t.Fatalf("email tak dikenal lebih murah dari satu verifikasi argon2 (%v vs %v): hash dummy tidak dijalankan", unknown, verifyCost)
 	}
 }
