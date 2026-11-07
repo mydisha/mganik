@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/shared/api/client";
+import { toApiError } from "@/shared/api/problem";
 import { strings } from "@/shared/lib/strings";
 import { Button } from "@/shared/ui/button";
 import { StatusBadge } from "@/shared/ui/status-badge";
@@ -9,9 +10,13 @@ export function ApiStatus() {
   const ready = useQuery({
     queryKey: ["readyz"],
     queryFn: async () => {
-      const { data, error } = await api.GET("/readyz");
-      if (error || !data) throw new Error(error?.code ?? "not_ready");
-      return data;
+      try {
+        const { data, error } = await api.GET("/readyz");
+        if (error || !data) throw toApiError(error);
+        return data;
+      } catch (err) {
+        throw toApiError(err);
+      }
     },
     retry: false,
   });

@@ -1,21 +1,21 @@
 import { createBrowserRouter, Navigate } from "react-router";
-import { ConsoleHome } from "@/features/console/console-home";
-import { PosHome } from "@/features/pos/pos-home";
-import { VerifyPage } from "@/features/verify/verify-page";
+import { authRoutes } from "@/features/auth/routes";
+import { consoleRoutes } from "@/features/console/routes";
+import { posRoutes } from "@/features/pos/routes";
+import { verifyRoutes } from "@/features/verify/routes";
 import { AppShell } from "./app-shell";
 
-// Tiga permukaan: /console (ops), /pos (kasir), /v/:code (konsumen, tanpa shell).
+// Tiga permukaan, masing-masing mendefinisikan route-nya sendiri di
+// features/<fitur>/routes.tsx supaya pekerjaan paralel tidak saling tabrak:
+// /console (staff, di dalam AppShell), /pos (kasir, layar penuh tanpa shell),
+// /v/:code (konsumen, tanpa shell), plus route auth (/login).
 export function createAppRouter() {
   return createBrowserRouter([
     { path: "/", element: <Navigate to="/console" replace /> },
-    {
-      element: <AppShell />,
-      children: [
-        { path: "/console", element: <ConsoleHome /> },
-        { path: "/pos", element: <PosHome /> },
-      ],
-    },
-    { path: "/v/:code", element: <VerifyPage /> },
+    ...authRoutes,
+    { path: "/console", element: <AppShell />, children: consoleRoutes },
+    { path: "/pos", children: posRoutes },
+    { path: "/v", children: verifyRoutes },
     { path: "*", element: <Navigate to="/console" replace /> },
   ]);
 }
