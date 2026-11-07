@@ -1,5 +1,5 @@
 import "fake-indexeddb/auto";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { defaultSyncMeta, PosDb } from "./db";
@@ -85,13 +85,21 @@ describe("layar jual", () => {
     const amount = within(dialog).getByLabelText("Nominal (Tunai)");
     // Burst scanner ke kolom nominal (jeda < 30 ms) diabaikan, bukan jadi pembayaran.
     // (Event.timeStamp diisi platform; event sinkron berturut-turut berjarak < 30 ms.)
+    // timeStamp dipatok 5 ms per tombol supaya hasilnya tidak bergantung pada
+    // beban mesin saat suite berjalan paralel.
+    const burstKey = (key: string, at: number) => {
+      const ev = createEvent.keyDown(amount, { key });
+      Object.defineProperty(ev, "timeStamp", { value: at });
+      fireEvent(amount, ev);
+    };
     let typed = "";
+    let at = 1_000;
     for (const ch of "8991234567890") {
-      fireEvent.keyDown(amount, { key: ch });
+      burstKey(ch, (at += 5));
       typed += ch;
       fireEvent.change(amount, { target: { value: typed } });
     }
-    fireEvent.keyDown(amount, { key: "Enter" });
+    burstKey("Enter", (at += 5));
     expect(await within(dialog).findByText(/Isi scan masuk ke kolom nominal/)).toBeInTheDocument();
     expect(amount).toHaveValue("");
 
@@ -107,7 +115,9 @@ describe("layar jual", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.payload).toMatchObject({ total: 150_000, payments: [{ method: "CASH", amount: 200_000 }] });
     expect((await db.cart.get("current"))?.lines).toEqual([]);
-  });
+    // Alur penuh ini melewati banyak transaksi IndexedDB tiruan; di bawah
+    // beban suite paralel (argon2) bisa melewati batas default 5 detik.
+  }, 30_000);
 
   it("serial QR yang tidak dikenal perangkat ditahan sampai produk dipilih (daftar serial lokal kosong)", async () => {
     await db.serials.clear();
