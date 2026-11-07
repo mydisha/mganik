@@ -34,8 +34,47 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+
+  # ==== [iam] path di bawah ini ====
+  # ==== [/iam] ====
+
+  # ==== [serialization] produksi, agregasi, shipment, verifikasi, klaim ====
+  # ==== [/serialization] ====
+
+  # ==== [inventory] stok, order, pembayaran ====
+  # ==== [/inventory] ====
+
+  # ==== [pos] ====
+  # ==== [/pos] ====
+
+  # ==== [commandcenter] ====
+  # ==== [/commandcenter] ====
+
 components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-session
+    deviceToken:
+      type: http
+      scheme: bearer
   schemas:
+    # ==== [iam] schema di bawah ini ====
+    # ==== [/iam] ====
+
+    # ==== [serialization] ====
+    # ==== [/serialization] ====
+
+    # ==== [inventory] ====
+    # ==== [/inventory] ====
+
+    # ==== [pos] ====
+    # ==== [/pos] ====
+
+    # ==== [commandcenter] ====
+    # ==== [/commandcenter] ====
+
     LiveResponse:
       type: object
       required: [status]
@@ -72,4 +111,20 @@ components:
         detail:
           type: string
         request_id:
+          type: string
+        errors:
+          type: array
+          description: Diisi untuk 422 validation_failed
+          items:
+            $ref: "#/components/schemas/FieldError"
+    FieldError:
+      type: object
+      required: [field, code, message]
+      properties:
+        field:
+          type: string
+          description: Path JSON, mis. lines[0].qty
+        code:
+          type: string
+        message:
           type: string

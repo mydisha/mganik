@@ -62,6 +62,14 @@ export interface components {
             code: string;
             detail?: string;
             request_id?: string;
+            /** @description Diisi untuk 422 validation_failed */
+            errors?: components["schemas"]["FieldError"][];
+        };
+        FieldError: {
+            /** @description Path JSON, mis. lines[0].qty */
+            field: string;
+            code: string;
+            message: string;
         };
     };
     responses: never;

@@ -18,6 +18,8 @@ type Error struct {
 	Code   string
 	Title  string
 	Detail string
+	// Fields diisi untuk 422 validation_failed.
+	Fields []FieldError
 	cause  error
 }
 
@@ -41,14 +43,34 @@ func Wrap(cause error, status int, code, title, detail string) *Error {
 	return &Error{Status: status, Code: code, Title: title, Detail: detail, cause: cause}
 }
 
+// FieldError menjelaskan satu field request yang tidak valid. Field memakai
+// nama JSON (mis. "lines[0].qty"), Code stabil untuk dipetakan frontend.
+type FieldError struct {
+	Field   string `json:"field"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// Validation membuat error 422 validation_failed dengan daftar field.
+func Validation(fields ...FieldError) *Error {
+	return &Error{
+		Status: http.StatusUnprocessableEntity,
+		Code:   "validation_failed",
+		Title:  "Data tidak valid",
+		Detail: "Periksa kembali field yang ditandai.",
+		Fields: fields,
+	}
+}
+
 // Problem adalah body respons error.
 type Problem struct {
-	Type      string `json:"type"`
-	Title     string `json:"title"`
-	Status    int    `json:"status"`
-	Code      string `json:"code"`
-	Detail    string `json:"detail,omitempty"`
-	RequestID string `json:"request_id,omitempty"`
+	Type      string       `json:"type"`
+	Title     string       `json:"title"`
+	Status    int          `json:"status"`
+	Code      string       `json:"code"`
+	Detail    string       `json:"detail,omitempty"`
+	RequestID string       `json:"request_id,omitempty"`
+	Errors    []FieldError `json:"errors,omitempty"`
 }
 
 // RequestIDKey adalah kunci gin.Context tempat middleware menyimpan request id.
@@ -76,6 +98,7 @@ func Write(c *gin.Context, log *slog.Logger, err error) {
 		Code:      appErr.Code,
 		Detail:    appErr.Detail,
 		RequestID: c.GetString(RequestIDKey),
+		Errors:    appErr.Fields,
 	})
 }
 
@@ -85,4 +108,13 @@ var (
 		"Tidak ditemukan", "Alamat yang diminta tidak ada.")
 	ErrMethodNotAllowed = New(http.StatusMethodNotAllowed, "method_not_allowed",
 		"Metode tidak diizinkan", "Metode HTTP ini tidak didukung untuk alamat tersebut.")
+	ErrUnauthenticated = New(http.StatusUnauthorized, "unauthenticated",
+		"Belum masuk", "Masuk terlebih dahulu untuk mengakses alamat ini.")
+	// ErrForbidden juga dipakai service untuk cek objek/lokasi (BOLA).
+	ErrForbidden = New(http.StatusForbidden, "forbidden",
+		"Tidak diizinkan", "Akun ini tidak memiliki izin untuk aksi tersebut.")
+	ErrBadRequest = New(http.StatusBadRequest, "invalid_request",
+		"Request tidak valid", "Body request bukan JSON yang valid atau memuat field yang tidak dikenal.")
+	ErrBodyTooLarge = New(http.StatusRequestEntityTooLarge, "body_too_large",
+		"Request terlalu besar", "Ukuran body melebihi batas yang diizinkan.")
 )

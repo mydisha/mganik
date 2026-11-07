@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"mganik/api/internal/apperror"
+	"mganik/api/internal/clock"
 	"mganik/api/internal/config"
 	"mganik/api/internal/controller"
 	"mganik/api/internal/middleware"
@@ -21,12 +22,18 @@ type Deps struct {
 	Config config.Config
 	DB     *gorm.DB
 	Log    *slog.Logger
+	// Clock opsional; default jam sistem. Test memakai clock.Fake.
+	Clock clock.Clock
 }
 
 func New(d Deps) (*gin.Engine, error) {
 	if d.Config.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
 	}
+	if d.Clock == nil {
+		d.Clock = clock.Real{}
+	}
+	controller.SetupValidator()
 
 	r := gin.New()
 	r.HandleMethodNotAllowed = true
@@ -53,6 +60,22 @@ func New(d Deps) (*gin.Engine, error) {
 
 	r.GET("/healthz", healthCtl.Live)
 	r.GET("/readyz", healthCtl.Ready)
+
+	// Autentikasi: resolver dibangun di routes_iam.go. Request tanpa kredensial
+	// diteruskan sebagai anonim; RequirePermission per route yang menolaknya.
+	resolver, err := newAuthResolver(d)
+	if err != nil {
+		return nil, err
+	}
+	api := r.Group("/api/v1", middleware.Authenticate(resolver, d.Log))
+
+	// Satu file per domain supaya pekerjaan paralel tidak saling tabrak.
+	// Setiap fungsi mendaftarkan route domainnya sendiri di bawah /api/v1.
+	registerIAM(api, d)           // routes_iam.go
+	registerSerialization(api, d) // routes_serialization.go (produksi, agregasi, shipment, verifikasi, klaim)
+	registerInventory(api, d)     // routes_inventory.go (stok, order, pembayaran)
+	registerPOS(api, d)           // routes_pos.go
+	registerCommandCenter(api, d) // routes_commandcenter.go
 
 	return r, nil
 }
