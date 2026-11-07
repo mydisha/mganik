@@ -767,7 +767,7 @@ check; `FOR NO KEY UPDATE` does not.
 | **testcontainers-go** (`postgres:17-alpine`) | Concurrency tests must run on real Postgres, not SQLite or mocks. `TEST_DATABASE_URL` as a fallback | — |
 | `log/slog`, `google/uuid` (UUIDv7), `x/crypto/argon2` | Built-in structured logging; time-ordered IDs that can be generated offline; argon2id is the OWASP recommendation | zap/zerolog, bigint serials, bcrypt |
 | **React 19 + Vite + Tailwind v4 + shadcn/ui** | Standard and fast; components are copied into the repo, so they can be adapted for POS needs (large touch targets, HID scanners) | — |
-| **Dexie.js (IndexedDB) + a custom sync protocol** (planned, see §9) | A POS transaction is a fact that server business logic must process (preemption, conflicts, idempotency). Generic sync libraries copy row state with last-write-wins, which is exactly what produces split-brain stock balances | RxDB, PowerSync, ElectricSQL (extra infrastructure components), PouchDB (needs CouchDB) |
+| **Dexie.js (IndexedDB) + a custom sync protocol** | A POS transaction is a fact that server business logic must process (preemption, conflicts, idempotency). Generic sync libraries copy row state with last-write-wins, which is exactly what produces split-brain stock balances | RxDB, PowerSync, ElectricSQL (extra infrastructure components), PouchDB (needs CouchDB) |
 | **pnpm workspace + Makefile + docker compose** | One command runs the whole stack; one JS app and one contracts package do not need Turborepo/Nx | — |
 | **OpenAPI** (`packages/contracts/openapi.yaml`) | Source of the frontend TypeScript types (`make gen`) | — |
 

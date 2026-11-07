@@ -22,6 +22,29 @@ offline-first cashier PWA (`/pos`), the staff Command Center (`/console`) and co
 with points claim (`/v/<code>`), with Vitest suites under `apps/web/src/features/*`. The full list of
 what is not built yet is in [ARCHITECTURE.md §9](ARCHITECTURE.md#9-prototype-limitations).
 
+### Reviewer quick tour (about 10 minutes)
+
+1. `docker compose up --build`, then print the demo fixtures (serial codes, claim PINs, the POS
+   device token and signing key): `docker compose run --rm --no-deps migrate seed --print-demo`.
+   Use Chrome or Firefox (see the cookie note under [Demo data](#demo-data)).
+2. **Command Center (Pillar D):** sign in at http://localhost:8088/login as `ops@mganik.test` /
+   `mganik-demo-2026`. The home page summarises stock, runout, open anomalies and conflicts in
+   sentences; the other pages cover stock per location, runout (DOI), anomalies, allocation
+   conflicts, distribution leakage (Case 1), serial trace and POS devices.
+3. **Anti-counterfeit (Pillar A):** open `http://localhost:8088/v/<unit code>` for any unit 1–48.
+   Those units are still in the central warehouse, so a consumer scan answers "suspicious" and
+   raises an anomaly in the console: a unit that was never sold should not be in a consumer's hands.
+4. **Offline POS (Pillar C, Case 4):** open http://localhost:8088/pos, paste the device token and
+   signing key, pick the cashier and enter PIN `135790` on the keypad. Scan (paste + Enter)
+   `http://localhost:8088/v/AT2JXMFN8BS93A4D`, the store's last unit, then pay cash. To see the
+   offline path, switch DevTools → Network to Offline before paying: the sale is stored on the
+   device and synced once when you go back online.
+5. **Loyalty (Case 2):** after that sale, open `/v/AT2JXMFN8BS93A4D` again: the unit is now
+   genuine. Claim points with any Indonesian mobile number, OTP `246810`, and the unit's claim PIN
+   `WNPFPPNWP7`.
+6. **API only:** the order, reservation and conflict flows behind Case 4 are easiest to inspect
+   through the tests below (`TestKasus4_*` in `internal/postest/kasus4_test.go`).
+
 ### Running the three required tests
 
 Requirements: Go 1.27 and Docker (the tests use PostgreSQL 17 through testcontainers), or your own
