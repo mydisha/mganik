@@ -1,4 +1,7 @@
 import { Toaster as Sonner } from "sonner";
+// CSP `style-src 'self'` memblokir <style> yang disisipkan sonner saat
+// runtime, jadi stylesheet-nya ikut dibundel sebagai file CSS biasa.
+import "sonner/dist/styles.css";
 
 /** Hasil aksi yang baru dijalankan pengguna. Bukan untuk galat saat memuat data. */
 export function Toaster() {
