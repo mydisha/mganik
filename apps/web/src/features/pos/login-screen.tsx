@@ -16,7 +16,7 @@ import { useDevice, usePos } from "./use-pos-data";
 export function LoginScreen() {
   const { db, engine } = usePos();
   const device = useDevice();
-  const cashiers = useLiveQuery(() => db.cashiers.orderBy("name").toArray(), [db]);
+  const cashiers = useLiveQuery(() => db.cashiers.toArray().then((rows) => rows.sort((a, b) => a.name.localeCompare(b.name, "id"))), [db]);
   const [cashierId, setCashierId] = useState<string | null>(null);
   const [pin, setPinState] = useState("");
   const pinRef = useRef("");
