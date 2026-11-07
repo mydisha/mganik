@@ -44,4 +44,5 @@ Thumbs.db
 # Konfigurasi lokal tool editor/agent
 .claude/settings.local.json
 .claude/worktrees/
+.claude/LESSONS.md
 CLAUDE.local.md
