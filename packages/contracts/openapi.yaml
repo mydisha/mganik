@@ -2,15 +2,131 @@ openapi: 3.1.0
 info:
   title: mGanik API
   version: 0.1.0
-  description: >
+  description: |
     mGanik backend API contract. Single source for the frontend types
     (openapi-typescript). Errors use application/problem+json (RFC 9457);
     `title`, `detail`, and `errors[].message` are user-facing Indonesian text,
     `code` is the stable machine-readable value.
+
+    ## Trying the API from this page
+
+    1. Start the stack with `docker compose up --build` (or `make up`) and open this
+       page at `http://localhost:8088/api/docs/`. The page and the API share one
+       origin, so session cookies and the CSRF Origin check work without extra setup.
+       Use Chrome or Firefox: Safari rejects `Secure` cookies on plain
+       `http://localhost`.
+    2. **Staff endpoints:** run `POST /api/v1/auth/login` with a demo account below.
+       The browser keeps the `__Host-session` cookie and sends it with later requests,
+       so the Authorize button is not needed for cookie endpoints.
+    3. **Consumer endpoints** (loyalty claims): `POST /api/v1/public/otp/request` with
+       any Indonesian mobile number, then `POST /api/v1/public/otp/verify` with the
+       mock code `246810`. This sets the `__Host-consumer` cookie.
+    4. **POS device endpoints:** click **Authorize** and paste the demo device token
+       below into `deviceToken`.
+    5. **Serialization endpoints** (mint, commission, aggregate/unpack, shipments, recall)
+       need production or warehouse permissions: log in as `admin@mganik.test` to try
+       them all, or as `produksi@mganik.test` / `gudang@mganik.test` for the role-scoped view.
+
+    Request bodies are prefilled with demo data; open the examples dropdown where an
+    endpoint has several scenarios. All demo values are deterministic seed fixtures,
+    not secrets. `make demo-data` prints every unit code and claim PIN.
+
+    | Demo account | Role | Locations |
+    |---|---|---|
+    | `ops@mganik.test` | OPS_MANAGER | all |
+    | `admin@mganik.test` | ADMIN | all |
+    | `produksi@mganik.test` | PRODUCTION_OPERATOR | GDP-BKS |
+    | `gudang@mganik.test` | WAREHOUSE_STAFF | GDP-BKS, HUB-SBY |
+    | `kepala.jaksel@mganik.test` | STORE_MANAGER | TKO-JKS |
+    | `kasir.jaksel@mganik.test` | CASHIER | TKO-JKS |
+    | `marketing@mganik.test` | MARKETING_ANALYST | all |
+
+    Password for every account: `mganik-demo-2026`. Cashier PIN in the `/pos` app: `135790`.
+
+    | Demo data | Value |
+    |---|---|
+    | Product DEMO-HRB-SCH10 (serialized) | `1709c346-10d1-5585-9ef0-7005904214ab` |
+    | Product DEMO-TEH-BAG20 | `37a8fc14-037a-5a0b-a220-3c212c909693` |
+    | Location GDP-BKS (central warehouse) | `13792935-de43-5ce7-b15b-82c7a923b1fc` |
+    | Location TKO-JKS (Jakarta Selatan store) | `1666259e-6aa4-5d50-b297-5fd2887e7719` |
+    | Location TKO-BDG (Bandung store, no POS device yet) | `05dc2ae7-585d-5895-9dbf-2d8db39d6b97` |
+    | Location MTR-JATIM (distributor warehouse, East Java territory) | `6f9f90ed-6526-5dda-9151-33f6c87a3448` |
+    | Batch L2610A | `1893fd4a-6962-54f0-82b9-2b436728b537` |
+    | Pallet / carton 1 / carton 4 (central warehouse) | `4WXENVZYGZVNBATA` / `F39RX076413BA6Q2` / `AWCKZ55T937HQSS8` |
+    | Unit #1, still in the central warehouse | `MVTW3YW6H7GAJW8S` (claim PIN `6QVEQ8Q4G1`) |
+    | Unit #49, last DEMO-HRB-SCH10 unit at TKO-JKS | `AT2JXMFN8BS93A4D` (claim PIN `WNPFPPNWP7`) |
+    | POS device token (TKO-JKS) | `demo-pos-21fcd6fed7cc10e338d71d9bc04d2548f96d21a5eb09f4f7760fcd72d0c57e29` |
+
+    A suggested walk through the three core flows:
+
+    - **Serial verification and anti-fraud:** `POST /api/v1/public/verify` with each
+      example; sell unit #49 in the `/pos` app, then claim its points with
+      `POST /api/v1/public/claims`; a second claim from another account is rejected.
+    - **Stock allocation with concurrency protection:** `POST /api/v1/orders`; replay
+      the same `Idempotency-Key` for an identical response, and try the oversell example.
+    - **Offline POS reconciliation:** sell in `/pos` with the network off, reconnect,
+      then check `GET /api/v1/cc/conflicts` and `GET /api/v1/inventory/balances`.
+
+    ## Signed endpoints
+
+    These endpoints need an HMAC signature, so "Try it out" alone cannot call them:
+
+    - `POST /api/v1/pos/sync` signs every transaction with the device signing key.
+      The cashier app at `/pos` signs, stores offline, and syncs for you.
+    - `POST /api/v1/webhooks/payments/mock` and `POST /api/v1/channels/marketplace/orders`
+      are signed with `WEBHOOK_SECRET` (demo default below). From a shell:
+
+    ```sh
+    SECRET=demo-webhook-secret-ganti-sebelum-dipakai-sungguhan
+    BODY='{"channel_code":"SHOPEE","external_ref":"SHP-DEMO-0001","currency":"IDR","lines":[{"sku":"DEMO-TEH-BAG20","qty":1,"unit_price":33000,"discount":0}]}'
+    TS=$(date +%s)
+    SIG=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$SECRET" -hex | awk '{print $NF}')
+    curl -sS http://localhost:8088/api/v1/channels/marketplace/orders \
+      -H 'Content-Type: application/json' \
+      -H "X-Mganik-Timestamp: $TS" -H "X-Mganik-Signature: v1=$SIG" \
+      -d "$BODY"
+    ```
+
+    For the payment webhook, use the same commands with
+    `/api/v1/webhooks/payments/mock` and a body like the example on that endpoint
+    (the `order_id` and `amount` of an order from `POST /api/v1/orders`).
+
+    ## Postman
+
+    Import `http://localhost:8088/api/docs/openapi.yaml` (or
+    `packages/contracts/openapi.yaml`) with File → Import. For cookie endpoints, call
+    the login endpoint first and send `Origin: http://localhost:8088` on
+    POST/PUT/PATCH/DELETE. If Postman does not resend the `Secure` session cookie
+    over plain http, use this page instead.
+tags:
+- name: health
+  description: Liveness and readiness probes
+- name: auth
+  description: Staff login and session (cookie __Host-session)
+- name: consumer
+  description: Consumer login with a mock SMS OTP (cookie __Host-consumer)
+- name: verification
+  description: 'Pillar A: public authenticity check and the anti-counterfeit radar'
+- name: loyalty
+  description: 'Case 2: point claims with the in-pack PIN, balance, and staff review'
+- name: serialization
+  description: 'Pillar A: code minting, commissioning, aggregation, shipments, trace, recall'
+- name: inventory
+  description: 'Pillar B: stock balances, adjustments, and quarantine'
+- name: orders
+  description: 'Pillar B: omnichannel orders with oversell protection, marketplace import'
+- name: payments
+  description: Mock payment gateway webhook
+- name: pos
+  description: 'Pillar C: POS devices, bootstrap, heartbeat, and offline sync'
+- name: commandcenter
+  description: 'Pillar D: Supply Chain Command Center read model and work queues'
+
 paths:
   /healthz:
     get:
       operationId: getLive
+      tags: [health]
       summary: "Liveness: returns 200 while the API process is running"
       responses:
         "200":
@@ -22,6 +138,7 @@ paths:
   /readyz:
     get:
       operationId: getReady
+      tags: [health]
       summary: "Readiness: database reachable and migrations applied"
       responses:
         "200":
@@ -60,6 +177,32 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/LoginRequest"
+            examples:
+              ops:
+                summary: Ops manager (all locations)
+                value:
+                  email: ops@mganik.test
+                  password: mganik-demo-2026
+              warehouse:
+                summary: Warehouse staff (GDP-BKS, HUB-SBY)
+                value:
+                  email: gudang@mganik.test
+                  password: mganik-demo-2026
+              storeManager:
+                summary: Store manager (TKO-JKS)
+                value:
+                  email: kepala.jaksel@mganik.test
+                  password: mganik-demo-2026
+              admin:
+                summary: Admin (every permission, all locations)
+                value:
+                  email: admin@mganik.test
+                  password: mganik-demo-2026
+              production:
+                summary: Production operator (GDP-BKS)
+                value:
+                  email: produksi@mganik.test
+                  password: mganik-demo-2026
       responses:
         "200":
           description: Logged in
@@ -191,6 +334,8 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/OtpRequest"
+            example:
+              phone: 081234567890
       responses:
         "202":
           description: Code sent (same response for new and existing numbers)
@@ -252,6 +397,9 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/OtpVerifyRequest"
+            example:
+              phone: 081234567890
+              code: '246810'
       responses:
         "200":
           description: Consumer logged in
@@ -359,6 +507,7 @@ paths:
   /api/v1/code-batches:
     post:
       operationId: mintCodes
+      tags: [serialization]
       summary: Mint random 80-bit serial codes (plus claim PINs for UNIT) for one print job
       description: >
         Permission code.mint. Plaintext codes and PINs are returned only once, in
@@ -371,6 +520,16 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/MintCodesRequest"
+            examples:
+              units:
+                summary: Mint 5 unit codes with claim PINs
+                description: 'Needs code.mint: log in as produksi@mganik.test or admin@mganik.test. The response is the only place the PINs appear in plain text (the print file for the label vendor).'
+                value:
+                  level_code: UNIT
+                  qty: 5
+                  product_id: 1709c346-10d1-5585-9ef0-7005904214ab
+                  printer_vendor: Vendor Label Demo
+                  notes: Cetak ulang label yang rusak di lini 1
       responses:
         "201":
           description: Print job created
@@ -392,6 +551,7 @@ paths:
   /api/v1/serials/commission:
     post:
       operationId: commissionSerials
+      tags: [serialization]
       summary: Bind GENERATED labels to a production batch (→ COMMISSIONED)
       security: [{ sessionCookie: [] }]
       requestBody:
@@ -415,6 +575,7 @@ paths:
   /api/v1/serials/receive:
     post:
       operationId: receiveSerials
+      tags: [serialization]
       summary: Receive production output (COMMISSIONED → IN_STOCK) into an own location, including descendants
       security: [{ sessionCookie: [] }]
       requestBody:
@@ -438,6 +599,7 @@ paths:
   /api/v1/serials/aggregate:
     post:
       operationId: aggregateSerials
+      tags: [serialization]
       summary: Pack units into a carton or cartons into a pallet
       description: >
         Validates level rank, packaging spec, capacity, product, the mixed-batch
@@ -465,12 +627,14 @@ paths:
   /api/v1/serials/{code}/unpack:
     post:
       operationId: unpackSerial
+      tags: [serialization]
       summary: Unpack a container (remove all direct children)
       security: [{ sessionCookie: [] }]
       parameters:
         - &serialCodeParam
           name: code
           in: path
+          example: 4WXENVZYGZVNBATA
           required: true
           description: 16-character Crockford Base32 serial code (lowercase and hyphens are normalized)
           schema:
@@ -489,6 +653,7 @@ paths:
   /api/v1/serials/{code}/trace:
     get:
       operationId: traceSerial
+      tags: [serialization]
       summary: Serial genealogy (ancestors, descendants, events, shipments, custodian, scans)
       description: >
         Shipments come from the event history (the unit and every carton or
@@ -509,6 +674,7 @@ paths:
   /api/v1/batches/{id}/recall:
     post:
       operationId: recallBatch
+      tags: [serialization]
       summary: Recall a batch; units in the supply chain move to QUARANTINED in bulk (idempotent)
       security: [{ sessionCookie: [] }]
       parameters:
@@ -525,6 +691,8 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/RecallRequest"
+            example:
+              reason: Uji lab menemukan kontaminasi pada lot L2610A
       responses:
         "200":
           description: Batch recalled
@@ -539,6 +707,7 @@ paths:
   /api/v1/shipments:
     post:
       operationId: createSerialShipment
+      tags: [serialization]
       summary: Ship pallets, cartons, or units; status and custodian of every descendant move in one statement
       security: [{ sessionCookie: [] }]
       requestBody:
@@ -547,6 +716,15 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/SerialShipmentCreateRequest"
+            examples:
+              toDistributor:
+                summary: Ship carton 4 to the East Java distributor
+                description: Log in as admin@mganik.test. The cartons sit inside the pallet, so first run POST /api/v1/serials/4WXENVZYGZVNBATA/unpack (otherwise 409 packed_in_parent). All 12 units move with the carton. After POST /api/v1/shipments/{id}/receive, a consumer scan outside East Java raises OUT_OF_TERRITORY for the distributor leakage index.
+                value:
+                  from_location_id: 13792935-de43-5ce7-b15b-82c7a923b1fc
+                  to_location_id: 6f9f90ed-6526-5dda-9151-33f6c87a3448
+                  codes:
+                  - AWCKZ55T937HQSS8
       responses:
         "201":
           description: Shipment dispatched
@@ -562,6 +740,7 @@ paths:
   /api/v1/shipments/{id}/receive:
     post:
       operationId: receiveSerialShipment
+      tags: [serialization]
       summary: Receive a shipment (→ AT_PARTNER at a partner location, IN_STOCK at an own location; idempotent)
       security: [{ sessionCookie: [] }]
       parameters:
@@ -580,6 +759,7 @@ paths:
   /api/v1/loyalty/claims/{id}/review:
     post:
       operationId: reviewLoyaltyClaim
+      tags: [loyalty]
       summary: Review a points claim (APPROVE/REJECT for PENDING, REVERSE for APPROVED)
       description: >
         REJECT and REVERSE (clawback, note required) reverse the points through
@@ -596,6 +776,17 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/ReviewClaimRequest"
+            examples:
+              reject:
+                summary: Reject a pending claim
+                value:
+                  decision: REJECT
+                  note: Diklaim di dekat toko, pembeli asli melapor ke CS
+              approve:
+                summary: Approve a pending claim
+                value:
+                  decision: APPROVE
+                  note: Struk pembelian valid
       responses:
         "200":
           description: Decision saved
@@ -611,6 +802,7 @@ paths:
   /api/v1/public/verify:
     post:
       operationId: verifySerial
+      tags: [verification]
       summary: Verify product authenticity (public, no login)
       description: >
         Rate limited per IP (IPv4 per address, IPv6 per /64; 429 with
@@ -625,6 +817,38 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/PublicVerifyRequest"
+            examples:
+              storeUnit:
+                summary: Genuine unit at the Jakarta Selatan store
+                description: GENUINE_FIRST on the first check, GENUINE_REPEAT with the first check's date and city afterwards.
+                value:
+                  code: AT2JXMFN8BS93A4D
+                  lat: -6.2441
+                  lng: 106.8003
+                  accuracy_m: 20
+              farAway:
+                summary: Same unit, minutes later from Makassar
+                description: IMPOSSIBLE_TRAVEL. From the same browser (same mg_vid cookie) it is only an internal anomaly; from another browser or device the answer becomes SUSPICIOUS.
+                value:
+                  code: AT2JXMFN8BS93A4D
+                  lat: -5.1477
+                  lng: 119.4327
+                  accuracy_m: 20
+              unshippedCentral:
+                summary: Unit that never left the central warehouse
+                description: 'SUSPICIOUS (NON_SELLABLE_SCAN): a consumer cannot hold a unit that was never shipped, so its label likely leaked.'
+                value:
+                  code: MVTW3YW6H7GAJW8S
+              unknownCode:
+                summary: Code that was never issued
+                description: NOT_FOUND; counted in the UNKNOWN_CODE hotspot per region per day.
+                value:
+                  code: ZZZZZZZZZZZZZZZZ
+              typedByHand:
+                summary: Code typed by hand
+                description: Lowercase and dashes are normalized (I/L read as 1, O as 0) before the lookup.
+                value:
+                  code: at2j-xmfn-8bs9-3a4d
       responses:
         "200":
           description: Verification result
@@ -638,6 +862,7 @@ paths:
   /api/v1/public/claims:
     post:
       operationId: claimLoyaltyPoints
+      tags: [loyalty]
       summary: Claim points with the PIN inside the package (consumer session)
       description: >
         423 claim_locked after 5 wrong PINs per unit; 409 already_claimed or
@@ -646,13 +871,35 @@ paths:
         duplicate_code does not apply (single code). Rate limited per IP and per
         account (429). A repeat claim by the same account returns the existing
         claim with status 200 (replayed=true).
-      security: [{ sessionCookie: [] }]
+      security: [{ consumerCookie: [] }]
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/LoyaltyClaimRequest"
+            examples:
+              soldStoreUnit:
+                summary: 'Claim unit #49 after selling it in /pos'
+                description: Points are granted once. Before the unit is sold the answer is 409 claim_not_allowed; a second claim from another account is 409 already_claimed.
+                value:
+                  code: AT2JXMFN8BS93A4D
+                  pin: WNPFPPNWP7
+                  lat: -6.2615
+                  lng: 106.8106
+                  accuracy_m: 25
+              unsoldUnit:
+                summary: Correct PIN on a unit still in the warehouse
+                description: 409 claim_not_allowed plus an anomaly (points harvested before a sale).
+                value:
+                  code: MVTW3YW6H7GAJW8S
+                  pin: 6QVEQ8Q4G1
+              wrongPin:
+                summary: Wrong PIN
+                description: 422 invalid_code_or_pin; the fifth wrong PIN locks the unit (423 claim_locked).
+                value:
+                  code: G39TJN8TBJ44G7MP
+                  pin: '0000000000'
       responses:
         "200":
           description: Same claim sent again
@@ -675,8 +922,9 @@ paths:
   /api/v1/public/loyalty/balance:
     get:
       operationId: getLoyaltyBalance
+      tags: [loyalty]
       summary: Consumer points balance (available vs held for the waiting period or review)
-      security: [{ sessionCookie: [] }]
+      security: [{ consumerCookie: [] }]
       responses:
         "200":
           description: Points balance
@@ -742,13 +990,19 @@ paths:
           name: Idempotency-Key
           in: header
           required: true
-          description: Client idempotency key (1-255 visible ASCII characters)
+          description: Client idempotency key (1-255 visible ASCII characters). Reuse a key to see the stored response replayed; use a new key for a new request.
+          example: demo-key-001
           schema: { type: string, minLength: 1, maxLength: 255 }
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/InventoryAdjustmentRequest" }
+            example:
+              location_id: 1666259e-6aa4-5d50-b297-5fd2887e7719
+              product_id: 37a8fc14-037a-5a0b-a220-3c212c909693
+              qty_delta: -1
+              reason: Kemasan rusak saat stock opname
       responses:
         "201":
           description: Movement recorded
@@ -779,6 +1033,12 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/InventoryQuarantineRequest" }
+            example:
+              location_id: 13792935-de43-5ce7-b15b-82c7a923b1fc
+              product_id: 37a8fc14-037a-5a0b-a220-3c212c909693
+              qty: 5
+              direction: IN
+              reason: Segel rusak, menunggu QC
       responses:
         "201":
           description: Movement recorded
@@ -818,6 +1078,22 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/OrderCreateRequest" }
+            examples:
+              d2c:
+                summary: D2C order, 2 boxes of tea
+                value:
+                  channel_code: D2C_WEB
+                  lines:
+                  - product_id: 37a8fc14-037a-5a0b-a220-3c212c909693
+                    qty: 2
+                  note: Pesanan demo
+              oversell:
+                summary: More than the stock anywhere
+                description: 409 out_of_stock with errors[] per line; nothing is reserved.
+                value:
+                  lines:
+                  - product_id: 37a8fc14-037a-5a0b-a220-3c212c909693
+                    qty: 1000
       responses:
         "201":
           description: Order created (or replayed)
@@ -872,6 +1148,8 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/OrderCancelRequest" }
+            example:
+              reason: Pelanggan membatalkan pesanan
       responses:
         "200":
           description: Order after cancellation
@@ -901,6 +1179,7 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/OrderFulfillRequest" }
+            example: {}
       responses:
         "200":
           description: Order after shipping
@@ -920,6 +1199,7 @@ paths:
         Amount and currency must equal the order total. PENDING_PAYMENT → PAID.
         Late payment (EXPIRED): stock is reserved again → PAID, or NEEDS_ACTION
         plus refund when stock is gone. A resend returns 200 ALREADY_PROCESSED.
+        See "Signed endpoints" in the API description for a shell command that signs the request.
       tags: [payments]
       security: []
       parameters:
@@ -940,6 +1220,13 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/PaymentWebhookRequest" }
+            example:
+              provider_ref: PAY-DEMO-0001
+              order_id: 00000000-0000-0000-0000-000000000000
+              amount: 66000
+              currency: IDR
+              status: SUCCEEDED
+              method: QRIS
       responses:
         "200":
           description: Event processed (or duplicate)
@@ -960,6 +1247,7 @@ paths:
         body = 200 duplicate with the same order; a different body = 409
         external_ref_conflict. The order starts as PAID; with insufficient stock
         the order is still created and moves to NEEDS_ACTION (not rejected).
+        See "Signed endpoints" in the API description for a shell command that signs the request.
       tags: [orders]
       security: []
       parameters:
@@ -970,6 +1258,15 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/MarketplaceOrderRequest" }
+            example:
+              channel_code: SHOPEE
+              external_ref: SHP-DEMO-0001
+              currency: IDR
+              lines:
+              - sku: DEMO-TEH-BAG20
+                qty: 1
+                unit_price: 33000
+                discount: 0
       responses:
         "201":
           description: New order
@@ -1015,6 +1312,9 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/PosDeviceCreateRequest" }
+            example:
+              location_id: 05dc2ae7-585d-5895-9dbf-2d8db39d6b97
+              name: Kasir 1 Toko Bandung
       responses:
         "201":
           description: Device created; store token and signing_key on the device (they cannot be retrieved again)
@@ -1074,6 +1374,8 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/PosDeviceRevokeRequest" }
+            example:
+              reason: Tablet kasir hilang
       responses:
         "200":
           description: Device with status REVOKED
@@ -1150,6 +1452,8 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/PosHeartbeatRequest" }
+            example:
+              pending_count: 0
       responses:
         "200":
           description: Status after the heartbeat
@@ -1165,6 +1469,9 @@ paths:
       operationId: syncPosTransactions
       summary: Reconcile offline POS transactions (idempotent per transaction)
       description: |
+        Try this flow through the cashier app at `/pos`, which signs every transaction,
+        stores it offline, and syncs it (see "Signed endpoints" in the API description).
+
         At most sync_max_batch (500) transactions per batch and
         sync_max_body_bytes (5 MiB) per body. Transactions are processed in
         device_seq order, each in its own database transaction; one failure does
@@ -1311,6 +1618,9 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/ConflictResolveRequest" }
+            example:
+              resolution: CUSTOMER_COMPENSATED
+              note: Pelanggan online diberi voucher, pesanan dikirim dari gudang pusat
       responses:
         "200":
           description: Conflict after closing
@@ -1495,6 +1805,22 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/CCAnomalyUpdateRequest"
+            examples:
+              ack:
+                summary: Acknowledge
+                value:
+                  status: ACK
+                  note: Sedang dicek tim lapangan
+              falsePositive:
+                summary: Close as a false positive
+                value:
+                  status: FALSE_POSITIVE
+                  note: Konsumen sedang mudik ke Makassar
+              resolved:
+                summary: Close as resolved
+                value:
+                  status: RESOLVED
+                  note: Listing marketplace sudah diturunkan
       responses:
         "200":
           description: Anomaly after the update
@@ -1592,14 +1918,17 @@ paths:
 components:
   securitySchemes:
     sessionCookie:
+      description: "Staff session. Set by POST /api/v1/auth/login; the browser sends it automatically on this page."
       type: apiKey
       in: cookie
       name: __Host-session
     consumerCookie:
+      description: "Consumer session. Set by POST /api/v1/public/otp/verify (mock code 246810)."
       type: apiKey
       in: cookie
       name: __Host-consumer
     deviceToken:
+      description: "POS device token. Demo device at TKO-JKS: demo-pos-21fcd6fed7cc10e338d71d9bc04d2548f96d21a5eb09f4f7760fcd72d0c57e29"
       type: http
       scheme: bearer
   schemas:

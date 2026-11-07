@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>mGanik API docs</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png" />
+    <link rel="stylesheet" href="swagger-ui.css" />
+    <link rel="stylesheet" href="docs.css" />
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <!-- Disalin dari swagger-ui-dist saat build image web (apps/web/Dockerfile).
+         Tanpa script inline supaya CSP script-src tetap 'self'. -->
+    <script src="swagger-ui-bundle.js"></script>
+    <script src="init.js"></script>
+  </body>
+</html>

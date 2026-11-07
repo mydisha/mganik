@@ -4,6 +4,7 @@
 !pnpm-workspace.yaml
 !pnpm-lock.yaml
 !apps/web/
+!packages/contracts/openapi.yaml
 apps/web/node_modules
 apps/web/dist
 apps/web/Dockerfile

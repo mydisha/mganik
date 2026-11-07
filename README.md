@@ -70,6 +70,22 @@ device up at `/pos/setup` with the demo device token and signing key from `make 
 Ports can be changed in `.env` (copy it from `.env.example`). `make up` does the same in the
 background; `make down` stops it, and `make clean` also deletes the database data.
 
+## API docs (Swagger UI)
+
+With the stack running, open **http://localhost:8088/api/docs/** (Chrome or Firefox). It renders
+`packages/contracts/openapi.yaml`, the same contract the frontend types are generated from.
+
+- The page shares an origin with the API, so "Try it out" works with the session cookies: run
+  `POST /api/v1/auth/login` first (staff), or the OTP request + verify pair (consumer, mock code
+  `246810`). For POS device endpoints, paste the demo device token into **Authorize**.
+- Request bodies are prefilled with demo data, with several scenarios per endpoint where useful
+  (for example genuine, suspicious, and unknown codes for `POST /api/v1/public/verify`). The API
+  description at the top of the page lists the demo accounts, IDs, codes, and a suggested
+  walk-through of the three core flows.
+- The POS sync, payment webhook, and marketplace import endpoints need an HMAC signature. The
+  docs explain how to sign the webhooks from a shell; POS sync is easiest through the `/pos` app.
+- Postman: File → Import `http://localhost:8088/api/docs/openapi.yaml`.
+
 ## Demo data
 
 The `migrate` service runs `api migrate --seed`: migrations, then demo data. The seed is idempotent
