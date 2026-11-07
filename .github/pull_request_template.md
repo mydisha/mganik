@@ -1,13 +1,13 @@
-## Ringkasan
+## Summary
 
-<!-- Apa yang berubah dan kenapa. -->
+<!-- What changed and why. -->
 
-## Cara menguji
+## How to test
 
 - [ ] `make test`
 - [ ] `make lint`
-- [ ] `docker compose up --build` lalu cek alur yang terdampak
+- [ ] `docker compose up --build`, then check the affected flows
 
-## Catatan
+## Notes
 
-<!-- Trade-off, batasan, atau langkah lanjutan. -->
+<!-- Trade-offs, limitations, or follow-up steps. -->

@@ -1,169 +1,171 @@
 # mGanik Omnichannel & Traceability
 
-Prototype fondasi sistem dari lini produksi sampai konsumen: serialisasi hologram dan
-anti-counterfeit, stok dan order omnichannel dengan proteksi konkurensi, POS offline-first,
-dan Supply Chain Command Center.
+A prototype of the system foundation from the production line to the consumer: hologram
+serialization and anti-counterfeit, omnichannel stock and orders with concurrency protection, an
+offline-first POS, and a Supply Chain Command Center.
 
-## Deliverable
+## Deliverables
 
-| Deliverable | Di mana | Bukti |
+| Deliverable | Where | Evidence |
 |---|---|---|
-| 1a. Verifikasi serial hologram + logika anti-fraud | `POST /api/v1/public/verify`, `POST /api/v1/public/claims`; `service/verify_service.go`, `radar_service.go`, `loyalty_service.go` | `internal/serialtest/radar_test.go`, `loyalty_test.go`, `loyalty_review_test.go` |
-| 1b. Alokasi stok pesanan dengan proteksi konkurensi | `POST /api/v1/orders`; `service/inventory_service.go`, `order_service.go`, `repository/inventory_repository.go` (`ApplyBalanceEffect`) | `internal/inventorytest/` |
-| 1c. Endpoint rekonsiliasi transaksi POS offline | `POST /api/v1/pos/sync`; `service/pos_sync_service.go` | `internal/postest/` (termasuk `kasus4_test.go`) |
-| 2. Arsitektur: komponen, alur data, skema DB, pilihan teknologi, strategi konkurensi | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Skema di `apps/api/migrations/` |
-| 3. Solusi 4 kasus, trade-off, metrik bisnis | [`PRODUCT_DEFENSE.md`](PRODUCT_DEFENSE.md) | — |
-| 4a. Test race condition stok | `internal/inventorytest/engine_test.go` | `TestReserve_ConcurrentLastUnits`: stok 10, 100 goroutine → tepat 10 reservasi |
-| 4b. Test siklus status hologram | `internal/serialtest/lifecycle_test.go` | `TestSerialTransitions_Table` (setiap pasangan status), `TestSerial_ConcurrentSell` |
-| 4c. Test idempotensi sync offline | `internal/postest/sync_idempotency_test.go` | `TestPosSync_DuplicateBatch`, `TestPosSync_ConcurrentDuplicate`, `TestPosSync_SameIdDifferentPayload` |
+| 1a. Hologram serial verification + anti-fraud logic | `POST /api/v1/public/verify`, `POST /api/v1/public/claims`; `service/verify_service.go`, `radar_service.go`, `loyalty_service.go` | `internal/serialtest/radar_test.go`, `loyalty_test.go`, `loyalty_review_test.go` |
+| 1b. Order stock allocation with concurrency protection | `POST /api/v1/orders`; `service/inventory_service.go`, `order_service.go`, `repository/inventory_repository.go` (`ApplyBalanceEffect`) | `internal/inventorytest/` |
+| 1c. Offline POS transaction reconciliation endpoint | `POST /api/v1/pos/sync`; `service/pos_sync_service.go` | `internal/postest/` (including `kasus4_test.go`) |
+| 2. Architecture: components, data flows, DB schema, technology choices, concurrency strategy | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Schema in `apps/api/migrations/` |
+| 3. Solutions for the 4 cases, trade-offs, business metrics | [`PRODUCT_DEFENSE.md`](PRODUCT_DEFENSE.md) | — |
+| 4a. Stock race condition test | `internal/inventorytest/engine_test.go` | `TestReserve_ConcurrentLastUnits`: stock 10, 100 goroutines → exactly 10 reservations |
+| 4b. Hologram status lifecycle test | `internal/serialtest/lifecycle_test.go` | `TestSerialTransitions_Table` (every status pair), `TestSerial_ConcurrentSell` |
+| 4c. Offline sync idempotency test | `internal/postest/sync_idempotency_test.go` | `TestPosSync_DuplicateBatch`, `TestPosSync_ConcurrentDuplicate`, `TestPosSync_SameIdDifferentPayload` |
 
-Path kode relatif terhadap `apps/api/internal/`. Frontend (`/pos`, `/console`, `/v/<kode>`)
-masih kerangka; ketiga alur dibuktikan lewat API dan test. Daftar lengkap yang belum dibangun
-ada di [ARCHITECTURE.md §9](ARCHITECTURE.md#9-batasan-prototype).
+Code paths are relative to `apps/api/internal/`. The frontend (`/pos`, `/console`, `/v/<code>`)
+is still a skeleton; all three flows are proven through the API and the tests. The full list of
+what is not built yet is in [ARCHITECTURE.md §9](ARCHITECTURE.md#9-prototype-limitations).
 
-### Menjalankan tiga test wajib
+### Running the three required tests
 
-Prasyarat: Go 1.27 dan Docker (test memakai PostgreSQL 17 lewat testcontainers), atau server
-Postgres 17 sendiri lewat `TEST_DATABASE_URL`. Jalankan dari `apps/api`.
+Requirements: Go 1.27 and Docker (the tests use PostgreSQL 17 through testcontainers), or your own
+Postgres 17 server through `TEST_DATABASE_URL`. Run from `apps/api`.
 
-Race condition stok:
+Stock race condition:
 
 ```bash
 go test -race -count=1 -run 'TestReserve_ConcurrentLastUnits' -v ./internal/inventorytest/
 ```
 
-Siklus status hologram:
+Hologram status lifecycle:
 
 ```bash
 go test -race -count=1 -run 'TestSerialTransitions_Table|TestSerial_ConcurrentSell' -v ./internal/serialtest/
 ```
 
-Idempotensi sync POS offline:
+Offline POS sync idempotency:
 
 ```bash
 go test -race -count=1 -run 'TestPosSync_DuplicateBatch|TestPosSync_ConcurrentDuplicate|TestPosSync_SameIdDifferentPayload' -v ./internal/postest/
 ```
 
-Seluruh test (Go dan frontend): `make test`.
+Every test (Go and frontend): `make test`.
 
-## Menjalankan
+## Running
 
-Prasyarat: Docker dengan Compose v2.
+Requirements: Docker with Compose v2.
 
 ```bash
 docker compose up --build
 ```
 
-Satu perintah itu menjalankan seluruh stack secara berurutan:
+That one command starts the whole stack in order:
 
-| Service | Isi | Alamat |
+| Service | What it does | Address |
 |---|---|---|
 | `db` | PostgreSQL 17 | `localhost:55432` (user/db `mganik`) |
-| `migrate` | Menerapkan migrasi, mengisi data demo, lalu keluar | — |
-| `api` | Backend Go (Gin) | http://localhost:8089 |
-| `web` | Build React disajikan nginx, mem-proxy `/api` ke `api` | http://localhost:8088 |
+| `migrate` | Applies migrations, loads demo data, then exits | — |
+| `api` | Go backend (Gin) | http://localhost:8089 |
+| `web` | React build served by nginx, proxying `/api` to `api` | http://localhost:8088 |
 
-Halaman: `/console` (Command Center), `/pos` (kasir), `/v/<kode>` (verifikasi konsumen); saat
-ini masih kerangka.
-Port bisa diubah lewat `.env` (salin dari `.env.example`). `make up` menjalankan hal yang
-sama di background; `make down` mematikannya, `make clean` juga menghapus data database.
+Pages: `/console` (Command Center), `/pos` (cashier), `/v/<code>` (consumer verification); they are
+still a skeleton for now.
+Ports can be changed in `.env` (copy it from `.env.example`). `make up` does the same in the
+background; `make down` stops it, and `make clean` also deletes the database data.
 
-## Data demo
+## Demo data
 
-Service `migrate` menjalankan `api migrate --seed`: migrasi lalu data demo. Seed idempotent
-(aman dijalankan ulang) dan hanya jalan kalau `SEED_DEMO=true` (default di compose; set
-`SEED_DEMO=false` di `.env` untuk migrasi saja). Isinya: 2 SKU, gudang pusat Bekasi, hub
-Surabaya, toko Jakarta Selatan dan Bandung, gudang Distributor Jatim dan Sulsel beserta
-wilayah resminya, 1 batch berisi 1 palet → 4 karton → 48 unit serial, saldo stok + ledger,
-harga POS dan D2C, satu akun per role, dan 1 device POS di toko Jakarta Selatan.
+The `migrate` service runs `api migrate --seed`: migrations, then demo data. The seed is idempotent
+(safe to rerun) and only runs when `SEED_DEMO=true` (the compose default; set `SEED_DEMO=false` in
+`.env` to migrate only). It contains: 2 SKUs, the Bekasi central warehouse (`GDP-BKS`), the
+Surabaya hub (`HUB-SBY`), the Jakarta Selatan (`TKO-JKS`) and Bandung (`TKO-BDG`) stores, the
+Distributor Jatim and Distributor Sulsel warehouses with their official territories, 1 batch with
+1 pallet → 4 cartons → 48 serialized units, stock balances + ledger, POS and D2C prices, one account
+per role, and 1 POS device at the Jakarta Selatan store.
 
-| Akun | Role | Scope lokasi |
+| Account | Role | Location scope |
 |---|---|---|
-| `admin@mganik.test` | ADMIN | semua |
-| `ops@mganik.test` | OPS_MANAGER | semua |
-| `produksi@mganik.test` | PRODUCTION_OPERATOR | Gudang Pusat |
-| `gudang@mganik.test` | WAREHOUSE_STAFF | Gudang Pusat, Hub Surabaya |
-| `kepala.jaksel@mganik.test` | STORE_MANAGER | Toko Jakarta Selatan |
-| `kasir.jaksel@mganik.test` | CASHIER | Toko Jakarta Selatan |
-| `marketing@mganik.test` | MARKETING_ANALYST | semua |
+| `admin@mganik.test` | ADMIN | all |
+| `ops@mganik.test` | OPS_MANAGER | all |
+| `produksi@mganik.test` | PRODUCTION_OPERATOR | Gudang Pusat Bekasi (`GDP-BKS`) |
+| `gudang@mganik.test` | WAREHOUSE_STAFF | Gudang Pusat Bekasi (`GDP-BKS`), Hub Surabaya (`HUB-SBY`) |
+| `kepala.jaksel@mganik.test` | STORE_MANAGER | Toko Jakarta Selatan (`TKO-JKS`) |
+| `kasir.jaksel@mganik.test` | CASHIER | Toko Jakarta Selatan (`TKO-JKS`) |
+| `marketing@mganik.test` | MARKETING_ANALYST | all |
 
-Password semua akun: nilai `SEED_DEMO_PASSWORD`, default **`mganik-demo-2026`**. Ganti di
-`.env` sebelum seed pertama kalau stack dibuka ke jaringan lain.
+Password for every account: the value of `SEED_DEMO_PASSWORD`, default **`mganik-demo-2026`**.
+Change it in `.env` before the first seed if the stack is reachable from other networks.
 
-Login staff: `POST /api/v1/auth/login` memasang cookie `__Host-session` (idle 8 jam,
-absolut 12 jam); 5 kali gagal per email atau 20 per IP dalam 15 menit memblok sementara.
-Login konsumen (klaim poin) memakai OTP mock: minta kode lewat
-`POST /api/v1/public/otp/request` dengan nomor seluler Indonesia mana pun, lalu masukkan kode
-tetap `OTP_MOCK_CODE`, default **`246810`**. Belum ada pengirim SMS; OTP mock ditolak di
-production kecuali `SEED_DEMO_ALLOW_PRODUCTION=true`. Nomor HP disimpan terenkripsi
-(`PII_ENC_KEY`) dan tidak pernah ditulis ke log.
+Staff login: `POST /api/v1/auth/login` sets the `__Host-session` cookie (8 hours idle, 12 hours
+absolute); 5 failures per email or 20 per IP within 15 minutes trigger a temporary block. Consumer
+login (for point claims) uses a mock OTP: request a code through `POST /api/v1/public/otp/request`
+with any Indonesian mobile number, then enter the fixed code `OTP_MOCK_CODE`, default
+**`246810`**. There is no SMS sender yet; the mock OTP is refused in production unless
+`SEED_DEMO_ALLOW_PRODUCTION=true`. Phone numbers are stored encrypted (`PII_ENC_KEY`) and are never
+written to logs.
 
-Cookie sesi memakai prefix `__Host-` dan atribut `Secure`. Di `http://localhost` (tanpa
-TLS) cookie ini diterima Chrome dan Firefox karena localhost dianggap konteks aman, tetapi
-**tidak oleh Safari**: pakai Chrome/Firefox untuk demo lokal, atau pasang TLS.
+The session cookie uses the `__Host-` prefix and the `Secure` attribute. On `http://localhost`
+(no TLS), Chrome and Firefox accept it because localhost counts as a secure context, but **Safari
+does not**: use Chrome/Firefox for the local demo, or set up TLS.
 
-IP klien untuk rate limit dan audit diambil dari `X-Forwarded-For` hanya kalau request
-datang dari nginx (container `web`, IP statis `COMPOSE_WEB_IP`, default `172.31.250.10` di
-subnet `COMPOSE_SUBNET`); nginx menimpa header itu dengan IP peer. Request langsung ke port
-API memakai IP peer-nya sendiri. Kalau subnet bentrok di host, ubah `COMPOSE_SUBNET`,
-`COMPOSE_WEB_IP`, dan `COMPOSE_IP_RANGE` bersama di `.env` (lihat `.env.example`).
+The client IP used for rate limiting and auditing is taken from `X-Forwarded-For` only when the
+request comes from nginx (the `web` container, static IP `COMPOSE_WEB_IP`, default `172.31.250.10`
+in the `COMPOSE_SUBNET` subnet); nginx overwrites that header with the peer IP. Requests sent
+directly to the API port use their own peer IP. If the subnet collides with something on the host,
+change `COMPOSE_SUBNET`, `COMPOSE_WEB_IP`, and `COMPOSE_IP_RANGE` together in `.env` (see
+`.env.example`).
 
-Compose adalah stack demo lokal: walau `APP_ENV=production`, ia memakai pepper dan akun
-demo yang nilainya publik di repo, lewat izin `SEED_DEMO_ALLOW_PRODUCTION=true` (api dan
-migrate menulis WARN saat start). Untuk deployment sungguhan set izin itu `false`; config
-lalu menolak `SEED_DEMO=true`, `CLAIM_PEPPER`/`PII_ENC_KEY` demo, OTP mock, dan password demo default. `make
-migrate/seed/api` membaca `.env` yang sama dan memakai default `CLAIM_PEPPER` yang sama
-dengan compose, jadi PIN demo tetap terverifikasi di kedua cara menjalankan. Kalau pepper
-diganti, `api seed` berikutnya memperbarui hash PIN fixture demo.
+Compose is a local demo stack: even with `APP_ENV=production`, it uses a pepper and demo accounts
+whose values are public in this repository, through the `SEED_DEMO_ALLOW_PRODUCTION=true`
+permission (api and migrate log a WARN at startup). For a real deployment set that permission to
+`false`; the config then refuses `SEED_DEMO=true`, the demo `CLAIM_PEPPER`/`PII_ENC_KEY`, the mock
+OTP, and the default demo password. `make migrate/seed/api` read the same `.env` and use the same
+default `CLAIM_PEPPER` as compose, so the demo PINs verify either way. If the pepper changes, the
+next `api seed` updates the PIN hashes of the demo fixtures.
 
-Reset data demo: `make clean` lalu `make up` (menghapus volume database proyek ini). Jangan
-memakai goose down: migrasi data lookup sengaja gagal turun selama masih ada data yang
-mereferensikannya.
+Resetting demo data: `make clean`, then `make up` (deletes this project's database volume). Do not
+use goose down: the lookup data migration deliberately refuses to roll back while other data still
+references it.
 
-Kode serial, PIN klaim, PIN POS kasir, dan token device POS adalah fixture deterministik
-(bukan rahasia) dan tidak pernah ditulis ke log. Untuk melihatnya:
+Serial codes, claim PINs, cashier POS PINs, and POS device tokens are deterministic fixtures (not
+secrets) and are never written to logs. To see them:
 
 ```bash
-docker compose run --rm --no-deps migrate seed --print-demo   # lewat image
-make demo-data                                                # dari source (butuh Go)
+docker compose run --rm --no-deps migrate seed --print-demo   # through the image
+make demo-data                                                # from source (needs Go)
 ```
 
 ## Development
 
-Prasyarat tambahan: Go 1.27, Node 22.12+, pnpm 12, opsional [air](https://github.com/air-verse/air) untuk hot reload.
+Additional requirements: Go 1.27, Node 22.12+, pnpm 12, and optionally [air](https://github.com/air-verse/air) for hot reload.
 
 ```bash
-make hooks     # sekali per clone
-make db        # Postgres saja
+make hooks     # once per clone
+make db        # Postgres only
 make migrate
-make seed      # data demo (idempotent)
-make api       # backend di :8089 (matikan stack compose dulu)
-make web       # Vite di :5173, proxy ke :8089
+make seed      # demo data (idempotent)
+make api       # backend on :8089 (stop the compose stack first)
+make web       # Vite on :5173, proxying to :8089
 ```
 
-| Perintah | Fungsi |
+| Command | What it does |
 |---|---|
-| `make test` | Test Go (`-race`) dan frontend. Test DB memakai Postgres 17 via testcontainers (butuh Docker), atau server sendiri lewat `TEST_DATABASE_URL` |
+| `make test` | Go tests (`-race`) and frontend tests. DB tests use Postgres 17 through testcontainers (needs Docker), or your own server through `TEST_DATABASE_URL` |
 | `make lint` | gofmt, go vet, typecheck |
-| `make gen` | Tipe TypeScript dari `packages/contracts/openapi.yaml` |
+| `make gen` | TypeScript types from `packages/contracts/openapi.yaml` |
 
-## Struktur
+## Structure
 
 ```
 apps/api        Go: controller → service → repository (Gin, GORM, goose)
 apps/web        React + Vite + Tailwind + shadcn/ui
-packages/contracts/openapi.yaml   kontrak API, sumber tipe frontend
-compose.yaml    seluruh stack
-DESIGN.md       token dan aturan UI
+packages/contracts/openapi.yaml   API contract, source of the frontend types
+compose.yaml    the whole stack
+DESIGN.md       UI tokens and rules
 ```
 
-Backend memakai pola layered di `apps/api/internal`:
+The backend uses a layered structure in `apps/api/internal`:
 
-| Package | Tanggung jawab |
+| Package | Responsibility |
 |---|---|
-| `controller` | Handler Gin: bind dan validasi DTO, panggil service, tulis respons atau problem+json |
-| `service` | Use case, batas transaksi, aturan bisnis |
-| `repository` | Akses database |
-| `dto` | Bentuk request/response (model GORM tidak pernah di-bind dari request) |
-| `apperror` | Error domain → `application/problem+json` (RFC 9457) |
-| `middleware`, `router`, `config`, `database` | Infrastruktur |
+| `controller` | Gin handlers: bind and validate DTOs, call the service, write the response or problem+json |
+| `service` | Use cases, transaction boundaries, business rules |
+| `repository` | Database access |
+| `dto` | Request/response shapes (GORM models are never bound from a request) |
+| `apperror` | Domain errors → `application/problem+json` (RFC 9457) |
+| `middleware`, `router`, `config`, `database` | Infrastructure |

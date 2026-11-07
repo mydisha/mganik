@@ -1,661 +1,669 @@
 # Product Defense
 
-Dokumen ini mempertahankan keputusan produk untuk empat kasus operasional mGanik dan Pilar D
-(Supply Chain Command Center). Setiap kasus disusun dengan urutan yang sama: **masalah inti →
-solusi berlapis → edge case & false positive → trade-off → metrik bisnis → rollout bertahap →
-apa yang sudah ada di prototype**.
+This document defends the product decisions behind mGanik's four operational cases and Pillar D
+(the Supply Chain Command Center). Every case follows the same order: **core problem → layered
+solution → edge cases and false positives → trade-offs → business metrics → staged rollout →
+what the prototype already does**.
 
-Cara membaca status:
+How to read the status labels:
 
-- **Dibangun**: ada di kode dan teruji terhadap PostgreSQL sungguhan (nama test disebut).
-- **Desain**: belum dibangun; alasan dan rencananya ditulis di sini.
+- **Built**: in the code and tested against a real PostgreSQL (test names are given).
+- **Design**: not built yet; the reasoning and the plan are written here.
 
-Detail teknis (skema, konkurensi, keamanan, batasan) ada di [`ARCHITECTURE.md`](ARCHITECTURE.md).
+Technical details (schema, concurrency, security, limitations) are in
+[`ARCHITECTURE.md`](ARCHITECTURE.md).
 
-## Daftar isi
+## Contents
 
-1. [Ringkasan](#1-ringkasan)
-2. [Asumsi](#2-asumsi)
-3. [Fondasi bersama: satu aset data untuk empat kasus](#3-fondasi-bersama-satu-aset-data-untuk-empat-kasus)
-4. [Kasus 1: Gray market distributor](#4-kasus-1-gray-market-distributor)
-5. [Kasus 2: Fraud poin loyalty](#5-kasus-2-fraud-poin-loyalty)
-6. [Kasus 3: Atribusi iklan ke penjualan Indomaret](#6-kasus-3-atribusi-iklan-ke-penjualan-indomaret)
-7. [Kasus 4: Split-brain stok POS offline vs online](#7-kasus-4-split-brain-stok-pos-offline-vs-online)
-8. [Pilar D: Supply Chain Command Center](#8-pilar-d-supply-chain-command-center)
-9. [Metrik utama](#9-metrik-utama)
+1. [Summary](#1-summary)
+2. [Assumptions](#2-assumptions)
+3. [Shared foundation: one data asset for four cases](#3-shared-foundation-one-data-asset-for-four-cases)
+4. [Case 1: Distributor gray market](#4-case-1-distributor-gray-market)
+5. [Case 2: Loyalty point fraud](#5-case-2-loyalty-point-fraud)
+6. [Case 3: Attributing ads to Indomaret sales](#6-case-3-attributing-ads-to-indomaret-sales)
+7. [Case 4: Offline POS vs. online stock split-brain](#7-case-4-offline-pos-vs-online-stock-split-brain)
+8. [Pillar D: Supply Chain Command Center](#8-pillar-d-supply-chain-command-center)
+9. [Key metrics](#9-key-metrics)
 10. [Roadmap](#10-roadmap)
-11. [Pertanyaan yang hampir pasti muncul](#11-pertanyaan-yang-hampir-pasti-muncul)
+11. [Questions that will almost certainly come up](#11-questions-that-will-almost-certainly-come-up)
 
 ---
 
-## 1. Ringkasan
+## 1. Summary
 
-| Kasus | Inti solusi | Status prototype | Metrik utama |
+| Case | Core of the solution | Prototype status | Headline metric |
 |---|---|---|---|
-| 1. Gray market distributor | Setiap unit ditelusuri ke shipment dan distributor penerimanya. Scan di luar wilayah resmi menjadi bukti internal; indeks kebocoran per distributor, bukan satu scan, yang memicu tindakan | Dibangun: agregasi, shipment + propagasi custodian, trace, aturan `OUT_OF_TERRITORY`, indeks kebocoran. Desain: endpoint test-buy, geolokasi IP | Subsidi yang diselamatkan (Rp) |
-| 2. Fraud poin loyalty | QR luar hanya untuk cek keaslian; poin hanya lewat PIN di dalam kemasan. Gerbang siklus hidup, masa tunggu, skor risiko, review + clawback | Dibangun hampir seluruhnya. Belum: job pelepasan poin otomatis | Tingkat klaim yang dibalik, biaya poin per pembelian ulang inkremental |
-| 3. Atribusi iklan → Indomaret | Alat ukur dipindah ke tangan konsumen: klaim PIN setelah membeli menyambungkan klik ke pembelian; data serial membuktikan unit lewat DC Indomaret; geo-lift untuk yang tidak scan | Desain. Bagian yang dipakai ulang (klaim PIN, scan berwilayah, custodian per shipment) sudah dibangun | Cost per verified purchase, iROAS dari geo-test |
-| 4. Split-brain stok POS | Fakta menang atas janji. Jendela konflik dikecilkan (buffer, heartbeat); saat konflik tetap terjadi, penjualan kasir selalu diterima dan order online dialihkan atau diselesaikan dengan adil | Dibangun di backend (sync, preempt, realokasi, konflik). Desain: aplikasi POS offline di browser | Konflik per 1.000 order online dari stok toko, % realokasi otomatis |
-| D. Command Center | Tiga pertanyaan setiap pagi: stok mana yang akan habis, distributor mana yang bocor, konflik apa yang belum selesai | Dibangun sebagai API read model. Belum: layar console | Hari stockout yang dihindari, rasio false positive anomali |
+| 1. Distributor gray market | Every unit traces back to a shipment and the distributor that received it. A scan outside the official territory becomes internal evidence; a per-distributor leakage index, not a single scan, triggers action | Built: aggregation, shipment + custodian propagation, trace, the `OUT_OF_TERRITORY` rule, the leakage index. Design: test-buy endpoint, IP geolocation | Subsidy saved (IDR) |
+| 2. Loyalty point fraud | The outer QR only checks authenticity; points need the PIN inside the pack. Lifecycle gate, holding period, risk score, review + clawback | Almost fully built. Missing: the scheduled job that releases held points | Reversed-claim rate, point cost per incremental repeat purchase |
+| 3. Ads → Indomaret | Move the measuring instrument into the consumer's hands: a post-purchase PIN claim links the click to the purchase; serial data proves the unit went through an Indomaret DC; geo-lift covers people who never scan | Design. The reused pieces (PIN claim, region-tagged scans, custodian per shipment) are built | Cost per verified purchase, iROAS from a geo test |
+| 4. POS stock split-brain | Facts beat promises. Shrink the conflict window (buffer, heartbeat); when a conflict still happens, the cashier sale always stands and the online order is reallocated or settled fairly | Built in the backend (sync, preemption, reallocation, conflicts). Design: the in-browser offline POS app | Conflicts per 1,000 online orders fulfilled from store stock, % reallocated automatically |
+| D. Command Center | Three questions every morning: which stock will run out, which distributor is leaking, which conflicts are still open | Built as an API read model. Missing: the console screens | Stockout days avoided, anomaly false-positive rate |
 
-**Benang merah**
+**Common threads**
 
-1. **Satu aset data, banyak kegunaan.** Serialisasi + agregasi + PIN dalam kemasan menjawab gray
-   market, fraud poin, atribusi iklan, dan anti-counterfeit sekaligus.
-2. **Integritas di database, keputusan di service.** Invariant kritis dikunci constraint; aturan
-   bisnis bisa berubah tanpa merusak data.
-3. **Jangan menghukum dari satu sinyal.** Radar mengumpulkan bukti, manusia memutuskan. Konsumen
-   tidak pernah disalahkan atas kesalahan distributor.
-4. **Rollout bertahap sadar biaya.** Mulai dari yang tidak mengubah kemasan atau proses pabrik,
-   ukur, lalu naik.
-5. **Jujur soal batas.** Yang belum dibangun ditulis sebagai batasan, lengkap dengan titik terlemah
-   desainnya.
+1. **One data asset, many uses.** Serialization + aggregation + an in-pack PIN answer the gray
+   market, point fraud, ad attribution, and anti-counterfeit questions at once.
+2. **Integrity in the database, decisions in services.** Critical invariants are locked by
+   constraints; business rules can change without corrupting data.
+3. **Never punish on a single signal.** The radar collects evidence, people decide. Consumers are
+   never blamed for a distributor's misconduct.
+4. **Cost-aware staged rollout.** Start with what does not change the packaging or the factory
+   process, measure, then step up.
+5. **Honest about limits.** What is not built is written down as a limitation, including the
+   weakest point of each design.
 
 ---
 
-## 2. Asumsi
+## 2. Assumptions
 
-Saya tidak punya data operasional mGanik. Asumsi di bawah dipakai sebagai default; semua ambang
-angka bisa diubah tanpa deploy (`anomaly_rules.params`, env config) dan wajib dikalibrasi dengan
-data minggu-minggu pertama.
+I do not have mGanik's operational data. The assumptions below are defaults; every numeric
+threshold can be changed without a deploy (`anomaly_rules.params`, environment config) and must be
+calibrated against the first weeks of real data.
 
-| Area | Asumsi |
+| Area | Assumption |
 |---|---|
-| Organisasi | Satu grup usaha, bisa multi-brand. Mata uang IDR. Waktu disimpan UTC, ditampilkan per zona lokasi (WIB/WITA/WIT) |
-| Label | Label hologram dicetak vendor dengan kode yang kita generate: QR publik di luar kemasan dan PIN di dalam/balik label. Label ditempel di line produksi lalu di-scan untuk di-*commission* ke batch |
-| Retail modern | Indomaret dan retail pihak ketiga tidak memindai serial kita; POS mereka black box. Data yang mungkin didapat hanya replenishment ke DC, dengan jeda mingguan |
-| Distributor | Distributor belum memakai sistem kita (tidak ada scan keluar di gudang distributor). Portal distributor adalah fase lanjutan |
-| Channel online | Marketplace dan payment gateway terintegrasi lewat webhook (di prototype: mock bersignature HMAC) |
-| Toko sendiri | Tablet/PC dengan Chrome atau Edge dan barcode scanner HID. Internet toko bisa putus berjam-jam |
-| Konsumen | Memakai kamera HP untuk memindai QR; tidak perlu install aplikasi. Nomor HP Indonesia untuk OTP |
-| Angka awal | Baseline mobilitas konsumen lintas wilayah 5%, sampel minimum 20 scan per distributor, masa tunggu poin 7 hari, ambang review klaim skor 50, buffer stok online toko 2 unit, timeout heartbeat 2 menit |
+| Organization | One business group, possibly multi-brand. Currency IDR. Times stored in UTC and shown in the location's time zone (WIB/WITA/WIT) |
+| Labels | Hologram labels are printed by a vendor using codes we generate: a public QR outside the pack and a PIN inside the pack or on the back of the label. Labels are applied on the production line, then scanned to commission them to a batch |
+| Modern retail | Indomaret and other third-party retailers do not scan our serials; their POS is a black box. The only data we might get is DC replenishment, with a weekly lag |
+| Distributors | Distributors do not use our system yet (no outbound scan at the distributor's warehouse). A distributor portal is a later phase |
+| Online channels | Marketplaces and the payment gateway integrate through webhooks (in the prototype: HMAC-signed mocks) |
+| Own stores | Tablets/PCs running Chrome or Edge with HID barcode scanners. Store internet can drop for hours |
+| Consumers | Use the phone camera to scan the QR; no app install. Indonesian phone numbers for OTP |
+| Starting numbers | 5% baseline cross-region consumer mobility, a minimum sample of 20 scans per distributor, a 7-day point holding period, a claim review threshold of risk score 50, an online stock buffer of 2 units per store, a 2-minute heartbeat timeout |
 
 ---
 
-## 3. Fondasi bersama: satu aset data untuk empat kasus
+## 3. Shared foundation: one data asset for four cases
 
-Setiap unit punya dua rahasia dengan fungsi berbeda:
+Every unit carries two secrets with different jobs:
 
-| Kode | Letak | Fungsi | Tidak bisa dipakai untuk |
+| Code | Where | Purpose | Cannot be used for |
 |---|---|---|---|
-| QR publik (80-bit acak, 16 karakter) | Luar kemasan, terlihat di rak | Verifikasi keaslian oleh siapa pun, tanpa login | Mengklaim poin |
-| PIN klaim (50-bit acak) | Dalam kemasan / balik segel, baru terjangkau setelah dibeli dan dibuka | Klaim poin oleh akun terverifikasi | Apa pun sebelum produk dibeli |
+| Public QR (80 random bits, 16 characters) | Outside the pack, visible on the shelf | Anyone can verify authenticity, no login | Claiming points |
+| Claim PIN (50 random bits) | Inside the pack or under a seal, reachable only after purchase and opening | Point claims by a verified account | Anything before the product is bought |
 
-Kode acak (bukan berurutan) membuat enumerasi tidak mungkin. PIN hanya disimpan sebagai
+Random (not sequential) codes make enumeration impossible. The PIN is only stored as
 `HMAC-SHA256(pepper, id ‖ PIN)`.
 
-Unit diagregasi ke karton dan palet di line produksi. Shipment memindahkan custodian seluruh
-pohon kemasan sekaligus. Hasilnya, untuk setiap unit kita tahu: batch dan tanggal produksi, job
-cetak labelnya, karton dan paletnya, setiap shipment yang membawanya, siapa pemegangnya saat
-ini, dan di mana saja ia pernah dipindai. Empat kasus di bawah membaca aset data yang sama ini.
+Units are aggregated into cartons and pallets on the production line. A shipment moves custody of
+the whole packaging tree at once. As a result, for every unit we know its batch and production date,
+the label print job, its carton and pallet, every shipment that carried it, who holds it now, and
+where it has been scanned. All four cases below read this same data asset.
 
 ---
 
-## 4. Kasus 1: Gray market distributor
+## 4. Case 1: Distributor gray market
 
-### 4.1 Masalah inti
+### 4.1 Core problem
 
-Distributor daerah (misal Sulawesi Selatan) mendapat harga subsidi untuk menumbuhkan pasar di
-wilayahnya, lalu menjual ulang barang itu ke marketplace di kota besar. Akibatnya:
+A regional distributor (say, South Sulawesi) gets subsidized pricing to grow the market in its
+territory, then resells the goods on marketplaces in big cities. The result:
 
-- brand membayar subsidi untuk penjualan yang tidak menumbuhkan pasar baru;
-- harga pasar di kota besar rusak, karena barang subsidi dijual di bawah harga normal;
-- distributor resmi kota besar kehilangan penjualan dan kepercayaan pada brand.
+- the brand pays a subsidy for sales that do not grow any new market;
+- big-city market prices erode, because subsidized goods sell below the normal price;
+- the official big-city distributors lose sales and trust in the brand.
 
-**Kenapa sulit:** kita tidak punya akses ke gudang distributor dan tidak bisa inspeksi fisik.
-Barang yang bocor adalah **barang asli**, jadi pemeriksaan keaslian biasa tidak menemukannya.
+**Why it is hard:** we have no access to the distributor's warehouse and cannot inspect it. The
+leaked goods are **genuine**, so an ordinary authenticity check never catches them.
 
-### 4.2 Solusi berlapis
+### 4.2 Layered solution
 
-**Lapis 1: data serial yang mengikat unit ke surat jalan.**
+**Layer 1: serial data that ties a unit to a delivery note.**
 
-1. Line produksi mengagregasi unit → karton → palet (`POST /serials/aggregate`). Kapasitas,
-   produk, level kemasan, dan aturan campuran batch divalidasi; agregasi paralel ke karton yang
-   sama tidak bisa melampaui kapasitas.
-2. Shipment ke Distributor Sulsel dicatat dengan `program_code` (misal `SUBSIDI_SULSEL_Q4`).
-   Satu statement memindahkan status dan custodian seluruh turunan palet ke distributor itu,
-   plus satu event per unit.
-3. `GET /serials/:code/trace` memberikan genealogi lengkap: leluhur kemasan, shipment (termasuk
-   shipment milik karton/palet induknya, walau unit sudah dibongkar), custodian, dan scan terakhir.
+1. The production line aggregates unit → carton → pallet (`POST /serials/aggregate`). Capacity,
+   product, packaging level, and the mixed-batch rule are validated; parallel packing into the
+   same carton cannot exceed its capacity.
+2. The shipment to the South Sulawesi distributor carries a `program_code` (for example
+   `SUBSIDI_SULSEL_Q4`). A single statement moves the status and custodian of every descendant of
+   the pallet to that distributor and writes one event per unit.
+3. `GET /serials/:code/trace` returns the full genealogy: packaging ancestors, shipments (including
+   those of the parent carton/pallet, even after the unit was unpacked), custodian, and the latest
+   scans.
 
-**Lapis 2: sumber sinyal lokasi.** Distributor tidak memindai, jadi sinyal datang dari luar:
+**Layer 2: location signals.** Distributors do not scan, so the signals come from outside:
 
-| Sumber | Kepercayaan | Status |
+| Source | Trust | Status |
 |---|---|---|
-| Scan verifikasi konsumen (GPS dengan izin) | Sedang: konsumen bisa sedang bepergian | Dibangun |
-| Klaim poin (lokasi klaim) | Sedang | Dibangun |
-| **Program test-buy**: tim ops membeli dari listing marketplace yang mencurigakan (harga di bawah harga normal), lalu memindai dengan konteks `TEST_BUY` | Tertinggi: pembelian terkontrol dengan bukti transaksi | Indeks kebocoran sudah menghitungnya; endpoint pencatat scan test-buy masih desain |
-| Retur | Sedang | Desain |
+| Consumer verification scans (GPS with permission) | Medium: the consumer may be traveling | Built |
+| Point claims (claim location) | Medium | Built |
+| **Test-buy program**: the ops team buys from suspicious marketplace listings (priced below normal), then scans with the `TEST_BUY` context | Highest: a controlled purchase with a transaction receipt | The leakage index already counts it; the endpoint that records test-buy scans is design |
+| Returns | Medium | Design |
 
-**Lapis 3: aturan dan indeks, bukan tuduhan per scan.**
+**Layer 3: rules and an index, not accusations per scan.**
 
-- Aturan `OUT_OF_TERRITORY`: wilayah scan dibandingkan dengan wilayah resmi custodian
-  (`partner_territories`, mode `NATIONAL`/`SELECTED` disimpan eksplisit). Hasilnya **anomali
-  internal**; konsumen tetap melihat "asli", karena produknya memang asli. Yang bermasalah adalah
-  distributornya, bukan konsumen.
-- **Indeks kebocoran per distributor** (`GET /cc/distribution-leakage`) = scan luar wilayah ÷ scan
-  yang bisa dinilai, dalam jendela waktu (maks. 90 hari). Alert kalau:
-  - sampel ≥ 20 scan **dan** rasio > baseline mobilitas 5%, **atau**
-  - ada **satu** hit test-buy di luar wilayah (bukti terkuat, langsung alert).
-- Custodian dan wilayah resmi dihitung **pada saat scan**, bukan saat laporan dibuat. Distributor
-  yang wilayahnya berubah atau kontraknya berakhir di tengah jendela tidak salah dituduh.
+- The `OUT_OF_TERRITORY` rule compares the scan region with the custodian's official territory
+  (`partner_territories`, with `NATIONAL`/`SELECTED` stored explicitly). The result is an
+  **internal anomaly**; the consumer still sees "genuine", because the product is genuine. The
+  problem is the distributor, not the consumer.
+- **A leakage index per distributor** (`GET /cc/distribution-leakage`) = out-of-territory scans ÷
+  scans that can be judged, within a time window (max 90 days). It alerts when:
+  - the sample is at least 20 scans **and** the ratio exceeds the 5% mobility baseline, **or**
+  - there is **a single** out-of-territory test-buy hit (the strongest evidence, alert at once).
+- The custodian and the official territory are evaluated **at scan time**, not at report time.
+  A distributor whose territory changed or whose contract ended mid-window is not wrongly accused.
 
-**Lapis 4: bukti tanpa inspeksi fisik.** Contoh rantai bukti yang bisa dibaca dari data:
+**Layer 4: evidence without a physical inspection.** An example chain of evidence read straight
+from the data:
 
 ```mermaid
 flowchart LR
-  U["Unit 7Q3K...<br/>ditemukan via test-buy<br/>toko marketplace, Jakarta Barat"] --> C["Karton C-0042"]
-  C --> P["Palet P-0007"]
+  U["Unit 7Q3K...<br/>found by a test buy<br/>marketplace shop, West Jakarta"] --> C["Carton C-0042"]
+  C --> P["Pallet P-0007"]
   P --> S["Shipment SH-20261002-...<br/>program SUBSIDI_SULSEL_Q4"]
-  S --> D["CV Distributor Sulsel<br/>wilayah resmi: Sulawesi Selatan"]
+  S --> D["CV Distributor Sulsel<br/>official territory: South Sulawesi"]
 ```
 
-**Lapis 5: tindakan bisnis setelah bukti.** Sesuai kontrak distribusi: clawback subsidi untuk unit
-yang terbukti bocor, pengurangan alokasi program berikutnya, atau penghentian program subsidi
-untuk distributor itu. Sistem menyediakan bukti; keputusan sanksi tetap di tangan manusia.
+**Layer 5: business action after the evidence.** Following the distribution contract: claw back
+the subsidy for units proven to have leaked, cut the allocation in the next program, or end the
+subsidy program for that distributor. The system supplies evidence; the sanction stays a human
+decision.
 
-### 4.3 Edge case & false positive
+### 4.3 Edge cases and false positives
 
-| Situasi | Kenapa bisa salah | Penanganan |
+| Situation | Why it can be wrong | Handling |
 |---|---|---|
-| Konsumen bepergian (mudik, dinas) | Satu scan luar wilayah terlihat seperti kebocoran | Tidak ada tindakan dari satu scan. Indeks per distributor dengan sampel minimum dan baseline mobilitas |
-| GPS dipalsukan | Lokasi dikirim klien | Satu sinyal tidak memicu sanksi; test-buy adalah bukti yang dikontrol tim sendiri |
-| Wilayah scan terlalu kasar (hanya provinsi) padahal wilayah resmi level kota | Tidak bisa diputuskan di dalam atau di luar | Scan itu tidak dinilai (tidak masuk pembilang maupun penyebut) |
-| Transfer antar distributor yang sah | Unit berpindah wilayah secara resmi | Wajib dicatat sebagai shipment, sehingga custodian berpindah |
-| Distributor dengan cakupan nasional | Semua wilayah sah | `coverage_mode = NATIONAL` tidak pernah menghasilkan `OUT_OF_TERRITORY` |
-| Party tanpa data wilayah resmi | Tidak diketahui | Dilewati, tidak diasumsikan nasional atau kosong |
-| Scan tanpa izin lokasi | Tidak ada wilayah | Tidak dinilai; hanya scan berlokasi yang masuk indeks |
+| Consumer traveling (holiday homecoming, business trip) | One out-of-territory scan looks like a leak | No action on a single scan. A per-distributor index with a minimum sample and a mobility baseline |
+| Spoofed GPS | Location is sent by the client | No single signal triggers a sanction; test buys are evidence the team controls |
+| Scan region too coarse (province only) while the official territory is city-level | Cannot decide inside vs. outside | The scan is not judged (counted in neither numerator nor denominator) |
+| Legitimate transfer between distributors | The unit changes territory officially | Must be recorded as a shipment, so the custodian changes |
+| Distributor with national coverage | Every region is legitimate | `coverage_mode = NATIONAL` never produces `OUT_OF_TERRITORY` |
+| Party with no official territory data | Unknown | Skipped, never assumed national or empty |
+| Scan without location permission | No region | Not judged; only located scans enter the index |
 
-**Counter-tactic distributor**
+**Distributor counter-tactics**
 
-| Taktik | Jawaban |
+| Tactic | Answer |
 |---|---|
-| Merobek label hologram | Label tamper-evident (pola VOID); edukasi konsumen "tanpa hologram = jangan beli"; takedown listing tanpa hologram lewat program brand protection marketplace |
-| Membongkar karton dan menyebar ke sub-distributor | Presisi turun ke level distributor, masih cukup untuk sanksi. Fase lanjut: portal distributor dengan scan keluar |
-| Menjual lewat akun pribadi atau reseller | Test-buy tetap menelusuri unit ke shipment, siapa pun penjualnya |
+| Tearing off the hologram label | Tamper-evident labels (VOID pattern); consumer education ("no hologram, don't buy"); takedown of listings without holograms through the marketplace brand protection program |
+| Breaking up cartons and spreading them to sub-distributors | Precision drops to the distributor level, which is still enough for a sanction. Later phase: a distributor portal with outbound scans |
+| Selling through personal or reseller accounts | A test buy still traces the unit to its shipment, whoever the seller is |
 
-### 4.4 Trade-off
+### 4.4 Trade-offs
 
-- Scan agregasi menambah satu langkah di line produksi: butuh scanner, disiplin operator, dan
-  target per shift. Sistem menolak karton yang melebihi kapasitas, jadi kesalahan cepat terlihat.
-- Propagasi custodian saat shipment (bukan saat baca) menambah biaya tulis per shipment, karena
-  scan konsumen jauh lebih sering dan lebih sensitif latensi daripada shipment.
-- Resolusi wilayah memakai centroid kota terdekat: murah, tetapi kurang presisi di perbatasan.
-  Produksi butuh polygon wilayah.
-- Indeks kebocoran bergantung pada scan rate konsumen. Wilayah dengan scan rate rendah butuh
-  test-buy untuk menutup celah.
+- Aggregation scans add a step on the production line: scanners, operator discipline, and per-shift
+  targets. The system rejects cartons over capacity, so mistakes show up quickly.
+- Propagating custody when a shipment is written (rather than when data is read) makes shipments
+  more expensive to write, because consumer scans are far more frequent and more latency-sensitive
+  than shipments.
+- Region resolution uses the nearest city centroid: cheap, but imprecise near borders. Production
+  needs region polygons.
+- The leakage index depends on the consumer scan rate. Regions with a low scan rate need test buys
+  to close the gap.
 
-### 4.5 Metrik bisnis
+### 4.5 Business metrics
 
-| Metrik | Definisi | Kenapa penting |
+| Metric | Definition | Why it matters |
 |---|---|---|
-| **Subsidi yang diselamatkan (Rp)** | (harga normal − harga subsidi) × estimasi unit bocor yang dicegah atau di-clawback | Angka yang membuat manajemen bertindak |
-| Indeks kebocoran per distributor | Scan luar wilayah ÷ scan yang dinilai, per bulan | Tren per distributor, bukan kejadian tunggal |
-| Waktu scan → alert | Dari scan pertama yang memicu sampai alert | Kecepatan respons sebelum stok bocor menyebar |
-| Test-buy yang terlacak ke shipment | % pembelian test-buy yang punya rantai unit → shipment | Kualitas data agregasi |
-| Rasio false positive | Anomali `FALSE_POSITIVE` ÷ anomali yang ditutup | Kualitas aturan; menaikkan ambang kalau terlalu tinggi |
+| **Subsidy saved (IDR)** | (normal price − subsidized price) × estimated leaked units prevented or clawed back | The number that makes management act |
+| Leakage index per distributor | Out-of-territory scans ÷ judged scans, per month | The trend per distributor, not single incidents |
+| Scan-to-alert time | From the first triggering scan to the alert | How fast we respond before leaked stock spreads |
+| Test buys traced to a shipment | % of test buys with a unit → shipment chain | Quality of the aggregation data |
+| False-positive rate | `FALSE_POSITIVE` anomalies ÷ closed anomalies | Rule quality; raise the thresholds if it is too high |
 
-Ilustrasi (bukan data mGanik): selisih harga Rp5.000 per unit × 10.000 unit bocor per bulan =
-Rp50 juta per bulan untuk satu distributor.
+Illustration (not mGanik data): a price gap of IDR 5,000 per unit × 10,000 leaked units per month =
+IDR 50 million per month for one distributor.
 
-### 4.6 Rollout bertahap
+### 4.6 Staged rollout
 
-1. **Fase 1, satu program subsidi:** agregasi di line untuk SKU program itu, shipment wajib
-   dengan `program_code`, scan konsumen berjalan, indeks kebocoran dibaca mingguan oleh ops.
-2. **Fase 2, test-buy rutin:** 10–20 pembelian per bulan dari listing di bawah harga normal.
-   Mulai menerapkan klausul clawback di kontrak program berikutnya.
-3. **Fase 3:** portal distributor dengan scan keluar untuk distributor besar; polygon wilayah;
-   alert otomatis ke account manager distributor.
+1. **Phase 1, one subsidy program:** aggregation on the line for that program's SKUs, shipments
+   always carry a `program_code`, consumer scans run, and ops reads the leakage index weekly.
+2. **Phase 2, routine test buys:** 10–20 purchases a month from listings below the normal price.
+   Start enforcing a clawback clause in the next program's contract.
+3. **Phase 3:** a distributor portal with outbound scans for large distributors; region polygons;
+   automatic alerts to the distributor's account manager.
 
-### 4.7 Di prototype
+### 4.7 In the prototype
 
-| Komponen | Status | Bukti |
+| Component | Status | Evidence |
 |---|---|---|
-| Agregasi unit → karton → palet dengan validasi kapasitas dan level | Dibangun | `TestAggregate_CapacityAndIdempotent`, `TestAggregate_ConcurrentCapacity`, `TestAggregate_MixedBatchRule`, `TestAggregate_Rejections` |
-| Shipment + propagasi custodian ke seluruh palet | Dibangun | `TestShipment_PropagatesToWholePallet`, `TestShipmentToPartyAndUnlocatedScope` |
-| Trace genealogi | Dibangun | `TestTrace_Genealogy`, `TestTrace_ShipmentSurvivesUnpack` |
-| `OUT_OF_TERRITORY` internal saja | Dibangun | `TestVerify_OutOfTerritoryIsInternalOnly`, `TestVerify_NationalCoverageNeverOutOfTerritory` |
-| Indeks kebocoran per distributor | Dibangun | `TestLeakage_IndexPerDistributor`, `TestLeakage_CustodianAtScanTime`, `TestLeakage_TerritoryValidAtScanTime`, `TestLeakage_RoleEndedMidWindow`, `TestLeakage_CoarseRegionAndRounding` |
-| Endpoint pencatat scan test-buy | Desain | — |
-| Lokasi dari IP untuk scan tanpa GPS | Desain | Resolver default menjawab "tidak diketahui" |
-| Saldo stok ikut berpindah saat shipment | Belum (ARCHITECTURE §9, I4) | — |
+| Unit → carton → pallet aggregation with capacity and level validation | Built | `TestAggregate_CapacityAndIdempotent`, `TestAggregate_ConcurrentCapacity`, `TestAggregate_MixedBatchRule`, `TestAggregate_Rejections` |
+| Shipment + custody propagation across the whole pallet | Built | `TestShipment_PropagatesToWholePallet`, `TestShipmentToPartyAndUnlocatedScope` |
+| Genealogy trace | Built | `TestTrace_Genealogy`, `TestTrace_ShipmentSurvivesUnpack` |
+| `OUT_OF_TERRITORY` stays internal | Built | `TestVerify_OutOfTerritoryIsInternalOnly`, `TestVerify_NationalCoverageNeverOutOfTerritory` |
+| Leakage index per distributor | Built | `TestLeakage_IndexPerDistributor`, `TestLeakage_CustodianAtScanTime`, `TestLeakage_TerritoryValidAtScanTime`, `TestLeakage_RoleEndedMidWindow`, `TestLeakage_CoarseRegionAndRounding` |
+| Endpoint that records test-buy scans | Design | — |
+| Location from IP for scans without GPS | Design | The default resolver answers "unknown" |
+| Stock balance moves with the shipment | Not yet (ARCHITECTURE §9, I4) | — |
 
 ---
 
-## 5. Kasus 2: Fraud poin loyalty
+## 5. Case 2: Loyalty point fraud
 
-### 5.1 Masalah inti
+### 5.1 Core problem
 
-QR di kemasan terlihat di rak, jadi siapa pun (kasir, SPG, perantara) bisa memindainya sebelum
-produk terjual dan memanen poinnya. Poin harus jatuh ke **pembeli asli, sekali saja**.
+The QR on the pack is visible on the shelf, so anyone (cashiers, promoters, middlemen) can scan it
+before the product is sold and harvest the points. Points must go to **the real buyer, exactly
+once**.
 
-**Kenapa sulit:** di retail pihak ketiga kita tidak tahu kapan unit terjual. Kalau kita terlalu
-ketat, pembeli asli kecewa; kalau terlalu longgar, program loyalty membiayai pencuri poin.
+**Why it is hard:** at third-party retailers we do not know when a unit was sold. Too strict, and
+real buyers are disappointed; too loose, and the loyalty program funds point thieves.
 
-### 5.2 Solusi berlapis
+### 5.2 Layered solution
 
-Prinsipnya: ubah **ekonomi serangan**, bukan hanya menambah deteksi. Untuk mendapat PIN,
-pelaku harus merusak segel, dan produk yang segelnya rusak tidak bisa dijual.
+The principle: change the **economics of the attack**, not just add detection. To get the PIN, an
+attacker has to break the seal, and a product with a broken seal cannot be sold.
 
-| # | Lapis | Cara kerja | Status |
+| # | Layer | How it works | Status |
 |---|---|---|---|
-| 1 | **Dua kode per unit** | QR luar hanya verifikasi; poin hanya dengan PIN dalam kemasan | Dibangun |
-| 2 | **Gerbang siklus hidup** | Unit `SOLD` (terjual di toko sendiri/D2C) → poin langsung. Unit `AT_PARTNER` (di retail pihak ketiga, waktu jual tidak diketahui) → klaim diterima, poin `PENDING` selama masa tunggu 7 hari untuk review dan clawback. Unit yang belum beredar (`IN_STOCK`, `GENERATED`, `QUARANTINED`, ...) → ditolak + anomali | Dibangun |
-| 3 | **Satu unit satu klaim aktif** | Partial unique index hanya atas klaim `PENDING`/`APPROVED`. Klaim, transisi serial ke `CONSUMER_ACTIVATED`, dan ledger poin ditulis dalam satu transaksi | Dibangun |
-| 4 | **Akun terverifikasi** | Login OTP nomor HP (nomor disimpan terenkripsi); rate limit klaim 10 per jam per akun | Dibangun (OTP mock) |
-| 5 | **Anti brute force PIN** | Unit dikunci setelah 5 PIN salah, plus anomali. Percobaan paralel diserialkan oleh lock baris, jadi tidak bisa melewati batas | Dibangun |
-| 6 | **Skor risiko** | Bobot dari `anomaly_rules.params`, dijumlah lalu dibatasi 0–100; skor ≥ 50 → review manual | Dibangun |
-| 7 | **Review & clawback** | Staff `loyalty.review`: approve, reject, atau reverse (clawback, alasan wajib). Poin dibalik lewat ledger, status serial dikembalikan, semua tercatat di audit log | Dibangun |
-| 8 | **Selaraskan insentif** | Kasir toko sendiri mendapat insentif resmi per transaksi yang di-scan di POS, sehingga motivasi memanen poin konsumen hilang | Proses, di luar kode |
+| 1 | **Two codes per unit** | The outer QR only verifies; points need the in-pack PIN | Built |
+| 2 | **Lifecycle gate** | `SOLD` units (sold in our own stores/D2C) → points right away. `AT_PARTNER` units (at third-party retail, sale time unknown) → the claim is accepted and the points stay `PENDING` for a 7-day holding period, leaving room for review and clawback. Units not yet in circulation (`IN_STOCK`, `GENERATED`, `QUARANTINED`, ...) → rejected + anomaly | Built |
+| 3 | **One active claim per unit** | A partial unique index over `PENDING`/`APPROVED` claims only. The claim, the serial's move to `CONSUMER_ACTIVATED`, and the point ledger entry are written in one transaction | Built |
+| 4 | **Verified accounts** | Phone OTP login (the number is stored encrypted); a claim rate limit of 10 per hour per account | Built (mock OTP) |
+| 5 | **PIN brute-force protection** | A unit locks after 5 wrong PINs, plus an anomaly. Parallel attempts are serialized by a row lock, so they cannot get past the limit | Built |
+| 6 | **Risk score** | Weights from `anomaly_rules.params`, summed and clamped to 0–100; a score ≥ 50 → manual review | Built |
+| 7 | **Review and clawback** | Staff with `loyalty.review` approve, reject, or reverse (clawback, reason required). Points are reversed through the ledger, the serial status is restored, and everything is audited | Built |
+| 8 | **Aligned incentives** | Cashiers in our own stores earn an official incentive per transaction scanned at the POS, which removes the motive to harvest consumer points | Process, outside the code |
 
-Aturan skor risiko (default):
+Risk score rules (defaults):
 
-| Aturan | Kondisi | Bobot |
+| Rule | Condition | Weight |
 |---|---|---|
-| `CLAIM_NEAR_STORE` | Klaim dalam radius 100 m dari toko/gerai saat jam buka (konsumen biasanya klaim di rumah) | 30 |
-| `CLAIM_ACCOUNT_VELOCITY` | Lebih dari 5 klaim per akun dalam 24 jam | 40 |
-| `CLAIM_CARTON_SPREAD` | Unit dari karton yang sama diklaim lebih dari 3 akun dalam 24 jam | 30 |
-| `CLAIM_SHARED_DEVICE` | Satu perangkat dipakai lebih dari 3 akun | 40 |
+| `CLAIM_NEAR_STORE` | Claim within 100 m of a store during opening hours (consumers usually claim at home) | 30 |
+| `CLAIM_ACCOUNT_VELOCITY` | More than 5 claims per account in 24 hours | 40 |
+| `CLAIM_CARTON_SPREAD` | Units from the same carton claimed by more than 3 accounts in 24 hours | 30 |
+| `CLAIM_SHARED_DEVICE` | One device used by more than 3 accounts | 40 |
 
-Dengan ambang 50, **tidak ada satu aturan pun yang sendirian memicu review**. Butuh minimal dua
-sinyal (misal klaim beruntun + dekat toko = 70). Ini sengaja: satu sinyal terlalu mudah salah.
+With a threshold of 50, **no single rule triggers a review on its own**. It takes at least two
+signals (for example rapid claims + near a store = 70). That is deliberate: one signal is too easy
+to get wrong.
 
-### 5.3 Edge case & false positive
+### 5.3 Edge cases and false positives
 
-| Situasi | Penanganan |
+| Situation | Handling |
 |---|---|
-| Pembeli asli datang setelah klaim fraud | Klaim fraud ditolak/dibalik di review. Karena unique index hanya atas klaim aktif, pembeli asli tetap bisa klaim. Akun yang klaimnya ditolak tidak bisa mengklaim unit itu lagi, dan klaim berikutnya atas unit yang pernah ditolak wajib review manual |
-| Klaim yang ditolak padahal unit sudah diaktifkan | Status serial dikembalikan ke status sebelum aktivasi (`SOLD`/`AT_PARTNER`), supaya unit kembali ikut recall dan retur |
-| Konsumen klaim di toko tempat ia membeli | Hanya bobot 30, tidak cukup sendirian untuk review |
-| Hadiah (pembeli ≠ pengklaim) | Sah. Poin jatuh ke pemegang PIN, yaitu orang yang membuka kemasan |
-| Kemasan rusak, PIN tidak terbaca | Jalur CS dengan foto kemasan + struk; poin diberikan lewat entri `ADJUST` di ledger. Endpoint CS belum dibangun |
-| Pembeli di retail pihak ketiga menunggu 7 hari | Respons klaim menyebut kapan poin tersedia; saldo dipisah "tersedia" dan "tertahan" |
-| Dua klaim bersamaan untuk unit yang sama | Satu menang, satu ditolak `already_claimed` |
-| Recall batch setelah klaim | Unit di tangan konsumen tetap `CONSUMER_ACTIVATED`; verifikasi menampilkan instruksi recall |
+| The real buyer arrives after a fraudulent claim | The fraudulent claim is rejected or reversed in review. Because the unique index only covers active claims, the real buyer can still claim. The rejected account cannot claim that unit again, and any later claim on a unit with a rejected history must go through manual review |
+| A claim is rejected after the unit was activated | The serial returns to its pre-activation status (`SOLD`/`AT_PARTNER`), so the unit is covered again by recalls and returns |
+| The consumer claims inside the store where they bought | Weight 30 only, not enough for a review on its own |
+| A gift (buyer ≠ claimer) | Legitimate. Points go to the PIN holder, the person who opened the pack |
+| Damaged pack, unreadable PIN | Customer service with a photo of the pack + the receipt; points granted through an `ADJUST` ledger entry. The CS endpoint is not built |
+| A buyer at a third-party retailer waits 7 days | The claim response says when the points become available; the balance is split into "available" and "on hold" |
+| Two simultaneous claims for the same unit | One wins, the other is rejected with `already_claimed` |
+| Batch recall after a claim | The unit with the consumer stays `CONSUMER_ACTIVATED`; verification shows the recall instructions |
 
-### 5.4 Trade-off
+### 5.4 Trade-offs
 
-- **Biaya kemasan.** PIN di dalam kemasan butuh cetak variable data di balik label atau tutup;
-  lapisan gosok/segel menambah biaya per unit. Karena itu lapisan fisik yang mahal hanya untuk
-  SKU atau wilayah yang fraud-nya terukur tinggi (lihat rollout).
-- **Gratifikasi tertunda.** Pembeli di retail pihak ketiga menunggu 7 hari. Ini harga untuk bisa
-  membalik poin hasil panen sebelum terlanjur ditukar.
-- **Biaya review manual.** Ambang 50 bisa dinaikkan kalau antrean review terlalu panjang dan
-  rasio false positive tinggi.
-- **Biaya OTP SMS** per login konsumen.
+- **Packaging cost.** An in-pack PIN needs variable-data printing on the back of the label or the
+  cap; a scratch-off layer or seal adds cost per unit. That is why the expensive physical layer is
+  reserved for SKUs or regions with measurably high fraud (see the rollout).
+- **Delayed gratification.** Buyers at third-party retailers wait 7 days. That is the price of
+  being able to reverse harvested points before they are redeemed.
+- **Manual review cost.** The threshold of 50 can be raised if the review queue grows too long
+  and the false-positive rate is high.
+- **SMS OTP cost** per consumer login.
 
-### 5.5 Metrik bisnis
+### 5.5 Business metrics
 
-| Metrik | Definisi |
+| Metric | Definition |
 |---|---|
-| **Tingkat klaim yang dibalik** | Klaim `REJECTED` + `REVERSED` ÷ semua klaim. Target turun setelah lapis PIN aktif |
-| Scan rate | Klaim ÷ unit terjual. Terlalu rendah = program tidak menarik; lonjakan mendadak = panen |
-| % klaim yang direview + SLA review | Beban tim dan pengalaman konsumen |
-| Rasio false positive review | Klaim yang direview lalu di-approve ÷ klaim yang direview |
-| **Biaya poin per pembelian ulang inkremental** | Total biaya poin ÷ pembelian ulang tambahan dibanding kelompok kontrol tanpa poin |
-| Repeat purchase rate pemegang poin | Dibanding non-pemegang |
-| Unit terkunci karena brute force PIN | Indikasi serangan terorganisir |
+| **Reversed-claim rate** | `REJECTED` + `REVERSED` claims ÷ all claims. Should fall once the PIN layer is live |
+| Scan rate | Claims ÷ units sold. Too low = the program is not attractive; a sudden spike = harvesting |
+| % of claims reviewed + review SLA | Team workload and consumer experience |
+| Review false-positive rate | Reviewed claims that end up approved ÷ reviewed claims |
+| **Point cost per incremental repeat purchase** | Total point cost ÷ additional repeat purchases compared with a no-points control group |
+| Repeat purchase rate of point holders | Compared with non-holders |
+| Units locked by PIN brute force | A sign of organized attacks |
 
-### 5.6 Rollout bertahap
+### 5.6 Staged rollout
 
-1. **Fase 1, pilot satu SKU:** PIN dicetak di balik label (variable data, bentuk kemasan tidak
-   berubah). Gerbang siklus hidup, masa tunggu, dan skor risiko aktif; semua klaim skor ≥ 50
-   direview. Ukur scan rate, tingkat pembalikan, dan rasio false positive.
-2. **Fase 2, semua SKU:** ambang review dikalibrasi dari data fase 1; pelepasan poin otomatis
-   setelah masa tunggu dijalankan worker; insentif kasir toko sendiri berjalan.
-3. **Fase 3, lapisan fisik:** lapisan gosok/segel tamper-evident hanya untuk SKU bernilai tinggi
-   atau wilayah dengan fraud tinggi, kalau kerugian fraud terukur lebih besar dari biaya label.
+1. **Phase 1, one-SKU pilot:** the PIN is printed on the back of the label (variable data; the pack
+   shape does not change). The lifecycle gate, holding period, and risk score are on; every claim
+   with a score ≥ 50 is reviewed. Measure the scan rate, the reversal rate, and the false-positive
+   rate.
+2. **Phase 2, all SKUs:** the review threshold is calibrated from phase 1 data; the worker releases
+   points automatically after the holding period; the incentive for our own cashiers starts.
+3. **Phase 3, physical layer:** a tamper-evident scratch-off layer or seal, only for high-value SKUs
+   or high-fraud regions, and only if measured fraud losses exceed the label cost.
 
-### 5.7 Di prototype
+### 5.7 In the prototype
 
-| Komponen | Status | Bukti |
+| Component | Status | Evidence |
 |---|---|---|
-| Mint kode + PIN, PIN hanya sebagai HMAC | Dibangun | `TestMint_UnitCodesAndPINs`, `TestMint_ContainerHasNoPINAndValidation` |
-| Gerbang siklus hidup | Dibangun | `TestClaim_SoldUnitApprovedImmediately`, `TestClaim_AtPartnerWaitingPeriod`, `TestClaim_UnsoldUnitRejectedWithAnomaly` |
-| Satu klaim aktif, klaim bersamaan | Dibangun | `TestClaim_ConcurrentDoubleClaim`, `TestInvariant_OneActiveClaimPerUnit` |
-| Lockout PIN, termasuk percobaan paralel | Dibangun | `TestClaim_WrongPINLockout`, `TestClaim_ParallelBruteForceStopsAtFive` |
-| Skor risiko + review | Dibangun | `TestClaim_RiskScoreClampedAndReview`, `TestHTTP_ClaimAndReviewFlow` |
-| Penolakan, pembeli asli, clawback | Dibangun | `TestClaim_RejectedThenGenuineBuyerClaims`, `TestClaim_QARepro_ReclaimAfterRejectBlocked`, `TestClaim_ReverseApprovedClaim`, `TestClaim_RejectRestoresStatusSoRecallCatchesIt`, `TestClaim_ConcurrentReviewDecisions` |
-| Pelepasan poin otomatis setelah masa tunggu | Fungsi dibangun dan teruji (`TestReleaseDueClaims_ConcurrentInstances`), belum dijadwalkan worker (ARCHITECTURE §9, I3) | — |
-| Unit yang terjual lewat order D2C bisa diklaim | Belum: fulfill belum mengubah serial ke `SOLD` (ARCHITECTURE §9, I2). Unit yang terjual lewat POS sudah | — |
-| Pengirim SMS OTP, endpoint CS | Desain | — |
+| Code + PIN minting, PIN stored only as an HMAC | Built | `TestMint_UnitCodesAndPINs`, `TestMint_ContainerHasNoPINAndValidation` |
+| Lifecycle gate | Built | `TestClaim_SoldUnitApprovedImmediately`, `TestClaim_AtPartnerWaitingPeriod`, `TestClaim_UnsoldUnitRejectedWithAnomaly` |
+| One active claim, simultaneous claims | Built | `TestClaim_ConcurrentDoubleClaim`, `TestInvariant_OneActiveClaimPerUnit` |
+| PIN lockout, including parallel attempts | Built | `TestClaim_WrongPINLockout`, `TestClaim_ParallelBruteForceStopsAtFive` |
+| Risk score + review | Built | `TestClaim_RiskScoreClampedAndReview`, `TestHTTP_ClaimAndReviewFlow` |
+| Rejection, real buyer, clawback | Built | `TestClaim_RejectedThenGenuineBuyerClaims`, `TestClaim_QARepro_ReclaimAfterRejectBlocked`, `TestClaim_ReverseApprovedClaim`, `TestClaim_RejectRestoresStatusSoRecallCatchesIt`, `TestClaim_ConcurrentReviewDecisions` |
+| Automatic point release after the holding period | The function is built and tested (`TestReleaseDueClaims_ConcurrentInstances`) but not scheduled by the worker (ARCHITECTURE §9, I3) | — |
+| Units sold through D2C orders can be claimed | Not yet: fulfillment does not move the serial to `SOLD` (ARCHITECTURE §9, I2). Units sold through the POS already can | — |
+| SMS OTP sender, CS endpoint | Design | — |
 
 ---
 
-## 6. Kasus 3: Atribusi iklan ke penjualan Indomaret
+## 6. Case 3: Attributing ads to Indomaret sales
 
-Seluruh kasus ini **desain**. Bagian yang dipakai ulang (klaim PIN, scan berwilayah, custodian per
-shipment) sudah dibangun untuk kasus 1 dan 2.
+This whole case is **design**. The reused pieces (PIN claim, region-tagged scans, custodian per
+shipment) are already built for Cases 1 and 2.
 
-### 6.1 Masalah inti
+### 6.1 Core problem
 
-Marketing membelanjakan iklan Instagram/TikTok dan perlu bukti bahwa iklan itu menggerakkan
-penjualan fisik di Indomaret. POS Indomaret black box: tidak ada data transaksi real-time, hanya
-replenishment ke DC dengan jeda mingguan. Tanpa bukti, anggaran iklan dibagi berdasarkan klik dan
-view, bukan pembelian.
+Marketing spends on Instagram/TikTok ads and needs proof that those ads drive physical sales at
+Indomaret. Indomaret's POS is a black box: no real-time transaction data, only DC replenishment
+with a weekly lag. Without proof, the ad budget is split by clicks and views, not purchases.
 
-### 6.2 Solusi hibrida: deterministik untuk sebagian, eksperimen untuk sisanya
+### 6.2 Hybrid solution: deterministic for some buyers, experiments for the rest
 
 ```mermaid
 flowchart LR
-  AD["Iklan IG / TikTok<br/>per kreatif"] --> L["Link kampanye /c/kode<br/>simpan touchpoint: click id, kreatif, wilayah kasar"]
-  L --> OFF["Penawaran: beli di Indomaret terdekat,<br/>klaim PIN dalam kemasan untuk poin/cashback"]
-  OFF --> BUY["Konsumen membeli di Indomaret"]
-  BUY --> CL["Klaim PIN<br/>akun OTP + lokasi klaim"]
-  CL --> CV["conversions<br/>touchpoint ↔ akun ↔ unit"]
-  SH["Shipment unit ke DC Indomaret<br/>custodian = Indomaret"] --> CV
-  CV --> CAPI["Konversi offline ke Meta CAPI / TikTok Events API<br/>identitas di-hash, dengan consent"]
-  CV --> RPT["Laporan: cost per verified purchase"]
-  GEO["Geo-lift: wilayah uji vs kontrol<br/>replenishment DC per rayon + scan per wilayah"] --> RPT
+  AD["IG / TikTok ad<br/>per creative"] --> L["Campaign link /c/code<br/>stores the touchpoint: click id, creative, coarse region"]
+  L --> OFF["Offer: buy at the nearest Indomaret,<br/>claim the in-pack PIN for points or cashback"]
+  OFF --> BUY["Consumer buys at Indomaret"]
+  BUY --> CL["PIN claim<br/>OTP account + claim location"]
+  CL --> CV["conversions<br/>touchpoint ↔ account ↔ unit"]
+  SH["Unit shipped to an Indomaret DC<br/>custodian = Indomaret"] --> CV
+  CV --> CAPI["Offline conversions to Meta CAPI / TikTok Events API<br/>hashed identities, with consent"]
+  CV --> RPT["Report: cost per verified purchase"]
+  GEO["Geo-lift: test vs. control regions<br/>DC replenishment per area + scans per region"] --> RPT
 ```
 
-1. **Link kampanye berkode.** Setiap kreatif punya `campaign_links` (`/c/<kode>` + UTM). Landing
-   page menyimpan touchpoint (click id `fbclid`/`ttclid`, kreatif, wilayah kasar) dengan cookie
-   first-party anonim.
-2. **Klaim PIN pasca-beli sebagai alat ukur.** Konsumen membeli di Indomaret, membuka kemasan,
-   mengklaim PIN (mekanisme kasus 2). Cookie anonim tersambung ke akun lewat `identity_links`,
-   lalu tercatat di `conversions`.
-3. **Serialisasi membuktikan channel.** Custodian unit adalah DC Indomaret wilayah X (dari
-   shipment), jadi pembelian itu memang lewat Indomaret, tanpa integrasi dengan POS mereka.
-4. **Promo geofence.** Promo hanya berlaku kalau lokasi klaim berada di wilayah target kampanye;
-   iklan ditargetkan pada radius sekitar gerai.
-5. **Umpan balik ke platform iklan.** Konversi offline dikirim ke Meta Conversions API dan TikTok
-   Events API (identitas di-hash, hanya untuk konsumen yang memberi consent marketing), supaya
-   algoritma iklan belajar dari pembelian nyata, bukan klik.
-6. **Geo-lift untuk yang tidak scan.** Wilayah uji (iklan menyala) dibandingkan wilayah kontrol
-   dengan difference-in-differences atas replenishment ke DC Indomaret per rayon
-   (`region_sellin_daily`) dan scan per wilayah. Scan rate wilayah menjadi faktor kalibrasi.
-7. **Opsional untuk hadiah besar:** unggah struk (OCR) untuk kode gerai dan tanggal.
+1. **Coded campaign links.** Every creative gets a `campaign_links` entry (`/c/<code>` + UTM). The
+   landing page stores the touchpoint (click id `fbclid`/`ttclid`, creative, coarse region) with
+   an anonymous first-party cookie.
+2. **The post-purchase PIN claim as the measuring instrument.** The consumer buys at Indomaret,
+   opens the pack, and claims the PIN (the Case 2 mechanism). The anonymous cookie is linked to the
+   account through `identity_links` and recorded in `conversions`.
+3. **Serialization proves the channel.** The unit's custodian is the Indomaret DC for region X
+   (from the shipment), so the purchase really went through Indomaret, with no integration with
+   their POS.
+4. **Geofenced promos.** The promo only applies when the claim location is inside the campaign's
+   target region; ads target a radius around the stores.
+5. **Feedback to the ad platforms.** Offline conversions go to the Meta Conversions API and the
+   TikTok Events API (hashed identities, only for consumers who gave marketing consent), so the ad
+   algorithms learn from real purchases instead of clicks.
+6. **Geo-lift for people who never scan.** Test regions (ads on) are compared with control regions
+   using difference-in-differences on replenishment to Indomaret DCs per area
+   (`region_sellin_daily`) and on scans per region. The regional scan rate is the calibration
+   factor.
+7. **Optional for large rewards:** a receipt upload (OCR) for the store code and the date.
 
-**Tabel yang direncanakan:** `campaigns`, `campaign_links`, `touchpoints`, `identity_links`,
-`conversions`, `attributions`, `region_sellin_daily`. Kolom consent sudah ada di `consumers`
-(`consent_marketing_at`, `consent_location_at`).
+**Planned tables:** `campaigns`, `campaign_links`, `touchpoints`, `identity_links`,
+`conversions`, `attributions`, `region_sellin_daily`. The consent columns already exist on
+`consumers` (`consent_marketing_at`, `consent_location_at`).
 
-### 6.3 Edge case
+### 6.3 Edge cases
 
-| Situasi | Penanganan |
+| Situation | Handling |
 |---|---|
-| Konsumen melihat iklan di HP, membeli, lalu klaim dari HP lain | Rantai deterministik putus; tertangkap di geo-lift, bukan di atribusi deterministik |
-| Cookie dihapus atau ITP Safari | Sama: sebagian rantai hilang, tidak diklaim sebagai atribusi |
-| Konsumen klaim tanpa pernah melihat iklan | Tetap konversi organik; tidak diatribusikan ke kampanye |
-| Satu unit dibeli di Indomaret wilayah lain dari DC asalnya | Custodian adalah DC; lokasi klaim memberi wilayah gerai yang lebih presisi |
-| Konsumen tidak memberi consent | Tidak dikirim ke platform iklan; hanya masuk agregat anonim |
+| The consumer sees the ad on one phone, buys, then claims from another phone | The deterministic chain breaks; geo-lift captures it, deterministic attribution does not |
+| Cookies cleared, or Safari ITP | Same: part of the chain is lost and is not claimed as attribution |
+| The consumer claims without ever seeing an ad | An organic conversion; not attributed to the campaign |
+| A unit bought at an Indomaret store in a different region from its DC | The custodian is the DC; the claim location gives a more precise store region |
+| The consumer gave no consent | Not sent to ad platforms; only counted in anonymous aggregates |
 
-### 6.4 Trade-off
+### 6.4 Trade-offs
 
-- **Bias seleksi.** Hanya konsumen yang engaged yang mengklaim PIN, jadi angka klaim bukan angka
-  penjualan total. Jangan dibaca sebagai angka absolut; kalibrasi dengan geo-lift.
-- **Jeda data.** Replenishment DC datang mingguan, jadi geo-lift butuh beberapa minggu untuk
-  terbaca.
-- **Biaya insentif** per klaim (poin/cashback) adalah biaya pengukuran.
-- **Privasi.** Data lokasi dan identitas untuk marketing butuh consent eksplisit (UU No. 27/2022
-  tentang PDP); hanya identitas yang di-hash yang keluar ke platform iklan.
+- **Selection bias.** Only engaged consumers claim a PIN, so claim counts are not total sales. Do
+  not read them as absolute numbers; calibrate with geo-lift.
+- **Data lag.** DC replenishment arrives weekly, so geo-lift takes several weeks to read.
+- **Incentive cost** per claim (points or cashback) is the cost of measurement.
+- **Privacy.** Location and identity data for marketing need explicit consent (Indonesian Personal
+  Data Protection Law No. 27/2022); only hashed identities leave for the ad platforms.
 
-Saya tidak mengklaim atribusi 100%. Yang ditawarkan adalah sinyal deterministik untuk sebagian
-pembeli dan eksperimen geo untuk memperkirakan sisanya; keduanya saling mengoreksi.
+I do not claim 100% attribution. What I offer is a deterministic signal for some buyers and a geo
+experiment to estimate the rest; each corrects the other.
 
-### 6.5 Metrik bisnis
+### 6.5 Business metrics
 
-| Metrik | Definisi |
+| Metric | Definition |
 |---|---|
-| **Cost per verified purchase** | Belanja iklan ÷ pembelian yang terbukti lewat klaim PIN |
-| **Lift inkremental dan iROAS** | Dari geo-test: kenaikan penjualan wilayah uji dibanding kontrol, dan pendapatan inkremental ÷ belanja iklan |
-| Cakupan atribusi deterministik | % pembelian (estimasi geo-lift) yang punya rantai klik → klaim |
-| Scan rate per wilayah | Faktor kalibrasi |
-| Waktu klik → pembelian | Untuk menentukan jendela atribusi |
+| **Cost per verified purchase** | Ad spend ÷ purchases proven through a PIN claim |
+| **Incremental lift and iROAS** | From the geo test: the sales increase in test regions over control, and incremental revenue ÷ ad spend |
+| Deterministic attribution coverage | % of purchases (geo-lift estimate) that have a click → claim chain |
+| Scan rate per region | The calibration factor |
+| Click-to-purchase time | Sets the attribution window |
 
-### 6.6 Rollout bertahap
+### 6.6 Staged rollout
 
-1. **Fase 1:** satu kampanye, dua wilayah uji dan dua kontrol yang sebanding. Link kampanye +
-   klaim PIN dengan cashback. Ukur scan rate dan cost per verified purchase.
-2. **Fase 2:** kirim konversi offline ke Meta CAPI/TikTok Events API; bandingkan performa kampanye
-   yang dioptimasi ke pembelian nyata dengan yang dioptimasi ke klik.
-3. **Fase 3:** geo-lift rutin per kuartal sebagai dasar alokasi anggaran antar kanal.
+1. **Phase 1:** one campaign, two test regions and two comparable control regions. Campaign links +
+   PIN claims with cashback. Measure the scan rate and the cost per verified purchase.
+2. **Phase 2:** send offline conversions to Meta CAPI/TikTok Events API; compare campaigns optimized
+   for real purchases against campaigns optimized for clicks.
+3. **Phase 3:** a quarterly geo-lift as the basis for splitting the budget across channels.
 
 ---
 
-## 7. Kasus 4: Split-brain stok POS offline vs online
+## 7. Case 4: Offline POS vs. online stock split-brain
 
-### 7.1 Masalah inti
+### 7.1 Core problem
 
-Internet toko putus. Kasir menjual unit terakhir, transaksi tersimpan di device. Di detik yang
-sama order online masuk, karena server masih melihat stok toko 1. Saat device kembali online,
-ada dua klaim atas satu barang fisik.
+The store's internet goes down. The cashier sells the last unit and the transaction is stored on
+the device. In the same second an online order comes in, because the server still sees 1 unit in
+the store. When the device is back online, two claims point at one physical item.
 
-### 7.2 Prinsip: fakta menang atas janji
+### 7.2 Principle: facts beat promises
 
-Pembeli di kasir sudah memegang barangnya; penjualan itu tidak bisa dibatalkan. Order online
-adalah janji yang masih bisa dipenuhi dari tempat lain. Karena itu:
+The buyer at the counter already holds the item; that sale cannot be undone. The online order is a
+promise that can still be fulfilled from somewhere else. Therefore:
 
-- penjualan offline yang bersignature sah **tidak pernah ditolak** karena stok;
-- reservasi online yang kalah dialihkan otomatis ke lokasi lain;
-- kalau tidak ada lokasi lain, pembeli online **tidak pernah ditagih** untuk barang yang tidak bisa
-  dikirim dan mendapat pilihan yang jelas.
+- a correctly signed offline sale is **never rejected** because of stock;
+- the online reservation that loses is reallocated to another location automatically;
+- if no other location has stock, the online buyer is **never charged** for an item that cannot be
+  shipped, and gets a clear choice.
 
-### 7.3 Lapis pencegahan: mengecilkan jendela konflik
+### 7.3 Prevention layers: shrinking the conflict window
 
-| Lapis | Cara kerja | Status |
+| Layer | How it works | Status |
 |---|---|---|
-| Prioritas gudang | Order online dialokasikan ke gudang pusat, lalu hub, baru toko yang mengaktifkan fulfillment online | Dibangun |
-| Buffer stok toko | ATP online toko = available − `online_buffer_qty` (misal 2 unit terakhir disisihkan untuk pembeli walk-in), dicek ulang di statement reservasi | Dibangun |
-| Heartbeat POS | Device mengirim heartbeat tiap 30 detik. Tanpa heartbeat > 2 menit, lokasi ditandai `OFFLINE` dan ATP online toko itu langsung 0. Jendela konflik turun dari "selama offline" menjadi "≤ 2 menit" | Dibangun |
-| Offline lease (opsi lebih keras) | Kuota stok dimiliki POS dan tidak pernah disentuh online. Lebih aman, tetapi menurunkan ketersediaan online | Desain |
+| Warehouse first | Online orders are allocated to the central warehouse, then the hub, and only then to stores that enabled online fulfillment | Built |
+| Store buffer | Store online ATP = available − `online_buffer_qty` (for example, the last 2 units are kept for walk-in buyers), re-checked inside the reservation statement | Built |
+| POS heartbeat | The device sends a heartbeat every 30 seconds. After more than 2 minutes without one, the location is marked `OFFLINE` and its online ATP drops to 0 immediately. The conflict window shrinks from "as long as it is offline" to "at most 2 minutes" | Built |
+| Offline lease (a stricter option) | A stock quota owned by the POS that online orders never touch. Safer, but lowers online availability | Design |
 
-### 7.4 Resolusi saat konflik tetap terjadi
+### 7.4 Resolution when a conflict still happens
 
-Alurnya digambar di [ARCHITECTURE §3.3](ARCHITECTURE.md#33-sync-pos-offline-dan-konflik-dengan-order-online-kasus-4).
-Dalam satu transaksi sync:
+The flow is drawn in [ARCHITECTURE §3.3](ARCHITECTURE.md#33-offline-pos-sync-and-conflicts-with-online-orders-case-4).
+Within a single sync transaction:
 
-1. Kunci reservasi aktif dan baris saldo `(toko, produk)`.
-2. Stok tersedia cukup → `DIRECT_SALE` biasa.
-3. Kurang → **preempt** reservasi online di toko itu dengan urutan yang deterministik:
-   - order `PENDING_PAYMENT` terbaru dulu: belum membayar, paling sedikit dirugikan;
-   - baru order `PAID` terbaru;
-   - di dalam satu kelompok, reservasi terkecil yang cukup menutup kekurangan, supaya sesedikit
-     mungkin pelanggan terdampak.
-   Setiap preempt mencatat konflik `OFFLINE_SALE_PREEMPT` dan event untuk worker.
-4. Stok fisik pun kurang (penerimaan tidak tercatat, selisih opname) → penjualan tetap dicatat,
-   selisihnya dicatat sebagai `ADJUST_DISCREPANCY` + konflik + anomali untuk stock opname. Sistem
-   tidak berbohong untuk menjaga angka.
-5. Worker realokasi mencari lokasi lain:
-   - ada stok → reservasi baru, konflik `AUTO_RESOLVED`; pelanggan online tidak merasakan
-     apa-apa selain mungkin estimasi kirim bergeser;
-   - tidak ada, order sudah dibayar → `NEEDS_ACTION` dengan dua pilihan: tunggu restock + voucher,
-     atau refund penuh + voucher permintaan maaf;
-   - tidak ada, order belum dibayar → `EXPIRED`; kalau pembayaran tetap masuk, diproses sebagai
-     bayar telat (pesan ulang stok, atau refund).
-6. Ops menutup konflik yang tersisa di `POST /cc/conflicts/:id/resolve` dengan alasan
-   (`CUSTOMER_COMPENSATED`, `ORDER_CANCELLED`, `STOCK_RECOUNTED`, ...) dan catatan wajib.
+1. Lock the active reservations and the `(store, product)` balance row.
+2. Enough available stock → a normal `DIRECT_SALE`.
+3. Not enough → **preempt** online reservations at that store in a deterministic order:
+   - the newest `PENDING_PAYMENT` orders first: they have not paid and are hurt the least;
+   - then the newest `PAID` orders;
+   - within a group, the smallest reservation that covers the shortfall, so as few customers as
+     possible are affected.
+   Every preemption records an `OFFLINE_SALE_PREEMPT` conflict and an event for the worker.
+4. Physical stock is short too (an unrecorded receipt, a stock-count discrepancy) → the sale is still
+   recorded, and the gap is recorded as `ADJUST_DISCREPANCY` + a conflict + an anomaly for a stock
+   count. The system does not lie to keep the numbers tidy.
+5. The reallocation worker looks for another location:
+   - stock found → a new reservation, conflict `AUTO_RESOLVED`; the online customer notices nothing
+     beyond perhaps a shifted delivery estimate;
+   - none, and the order is already paid → `NEEDS_ACTION` with two options: wait for restock + a
+     voucher, or a full refund + an apology voucher;
+   - none, and the order is not yet paid → `EXPIRED`; if the payment still arrives, it is handled as
+     a late payment (reserve stock again, or refund).
+6. Ops closes the remaining conflicts at `POST /cc/conflicts/:id/resolve` with a resolution
+   (`CUSTOMER_COMPENSATED`, `ORDER_CANCELLED`, `STOCK_RECOUNTED`, ...) and a required note.
 
-**Adil untuk dua pihak:** pembeli toko mendapat barang yang dipegangnya; pembeli online tidak
-pernah ditagih untuk barang yang tidak bisa dikirim, dan mendapat kompensasi yang jelas.
+**Fair to both sides:** the in-store buyer gets the item they are holding; the online buyer is never
+charged for an item that cannot be shipped, and receives clear compensation.
 
-### 7.5 Aturan offline POS lainnya
+### 7.5 Other offline POS rules
 
-| Aturan | Perilaku | Status |
+| Rule | Behavior | Status |
 |---|---|---|
-| Idempotensi | `client_txn_id` (UUIDv7 dari device) + `device_seq`; kirim ulang → hasil yang sama persis, stok berkurang sekali | Dibangun |
-| Integritas | Setiap transaksi ditandatangani HMAC dengan signing key device; ID sama dengan isi beda → ditolak + anomali critical | Dibangun |
-| Durasi offline | Lebih dari 24 jam → diterima dengan flag `OFFLINE_TOO_LONG` | Dibangun |
-| Harga | Dari price list versi terakhir yang dibawa device; versi kedaluwarsa → flag `PRICE_STALE`; harga beda dari server → `PRICE_MISMATCH` | Dibangun |
-| Nilai transaksi | Di atas Rp10 juta per transaksi → diterima + anomali untuk ditinjau | Dibangun |
-| Serial tak dikenal | Penjualan tetap diterima (pelanggan tidak ditahan), lalu anomali critical: **toko menjual barang yang tidak terdaftar**, bisa jadi orang dalam menyelipkan produk palsu | Dibangun |
-| Approval EDC/QRIS dipakai ulang | Penjualan dicatat, pembayaran menunggu verifikasi + anomali (indikasi kasir mengantongi uang) | Dibangun |
-| Kasir dinonaktifkan sebelum sync | Penjualan tetap fakta, diterima dengan flag + anomali | Dibangun |
-| Device hilang | Token device dicabut; data lokal minim (tanpa PII konsumen). Penjualan offline yang belum tersinkron dari device itu dipulihkan manual | Dibangun (pencabutan) |
-| Promo yang butuh validasi server | Dimatikan saat offline | Desain |
-| Banyak tab | Web Locks API memastikan satu sync runner; `device_seq` diambil dalam transaksi Dexie | Desain |
-| Data lokal dihapus browser | `navigator.storage.persist()` saat provisioning | Desain |
+| Idempotency | `client_txn_id` (UUIDv7 from the device) + `device_seq`; a resend → the exact same result, stock reduced once | Built |
+| Integrity | Every transaction is HMAC-signed with the device signing key; same ID with different content → rejected + critical anomaly | Built |
+| Offline duration | More than 24 hours → accepted with the `OFFLINE_TOO_LONG` flag | Built |
+| Prices | From the latest price list version the device carries; an expired version → `PRICE_STALE` flag; a price that differs from the server → `PRICE_MISMATCH` | Built |
+| Transaction value | Above IDR 10 million per transaction → accepted + anomaly for review | Built |
+| Unknown serial | The sale is still accepted (the customer is not held up), then a critical anomaly: **the store sold an item that is not registered**, possibly counterfeit goods slipped in by an insider | Built |
+| EDC/QRIS approval reused | The sale is recorded, the payment waits for verification + anomaly (a sign that a cashier pocketed money) | Built |
+| Cashier deactivated before sync | The sale is still a fact; accepted with a flag + anomaly | Built |
+| Lost device | The device token is revoked; local data is minimal (no consumer PII). Unsynced offline sales from that device are recovered by hand | Built (revocation) |
+| Promos that need server validation | Disabled while offline | Design |
+| Several tabs | The Web Locks API guarantees a single sync runner; `device_seq` is taken inside a Dexie transaction | Design |
+| Browser clears local data | `navigator.storage.persist()` during provisioning | Design |
 
-### 7.6 Edge case
+### 7.6 Edge cases
 
-| Situasi | Penanganan |
+| Situation | Handling |
 |---|---|
-| Device mengirim ulang batch setelah timeout | `DUPLICATE` dengan hasil identik, stok tidak berubah |
-| Batch yang sama dikirim dua tab/proses bersamaan | Unique index menahan yang kedua sampai yang pertama commit; satu diproses, satu `DUPLICATE` |
-| Jam device salah | Waktu terima server yang dipakai untuk keputusan; skew dicatat dan diberi flag |
-| Ada seq yang hilang | Server menjawab `ack_up_to_seq` dan `missing_seqs`; device mengirim ulang yang belum sampai |
-| Pencuri token device tanpa signing key mencoba mengisi seq berikutnya | Ditolak tanpa disimpan; seq tidak terduduki, penjualan asli tetap masuk |
-| Order online yang di-preempt sedang dibatalkan bersamaan | Sync menunggu; tidak pernah mencatat selisih stok palsu |
-| Satu transaksi berisi banyak produk | Semua reservasi produk dikunci lebih dulu dengan urutan tetap (anti deadlock) |
+| The device resends a batch after a timeout | `DUPLICATE` with an identical result; stock unchanged |
+| The same batch sent by two tabs/processes at once | The unique index holds the second until the first commits; one is processed, one is `DUPLICATE` |
+| Wrong device clock | The server's receive time drives decisions; the skew is recorded and flagged |
+| A missing sequence number | The server answers with `ack_up_to_seq` and `missing_seqs`; the device resends what has not arrived |
+| A thief with the device token but no signing key tries to fill the next sequence number | Rejected without being stored; the sequence number is not taken, and genuine sales still get in |
+| The preempted online order is being cancelled at the same moment | The sync waits; a phantom stock discrepancy is never recorded |
+| One transaction with many products | Every product's reservations are locked up front in a fixed order (no deadlock) |
 
-### 7.7 Trade-off
+### 7.7 Trade-offs
 
-- **Buffer** mengurangi ketersediaan online di toko. Bisa diatur per `(toko, produk)` sesuai
-  kecepatan jual.
-- **Heartbeat** tetap menyisakan jendela ≤ 2 menit; offline lease menutupnya dengan biaya
-  ketersediaan online yang lebih rendah.
-- **Preempt merugikan pelanggan online** sesekali. Biayanya terukur (kompensasi) dan lebih kecil
-  daripada menolak penjualan di kasir.
-- **Menerima selisih stok** berarti fakta POS bisa "menambah" stok tercatat. Penjagaannya:
-  signature per transaksi, kasir wajib punya izin di lokasi itu, anomali untuk setiap selisih,
-  dan opname.
+- **The buffer** reduces online availability at stores. It can be tuned per `(store, product)` by
+  sales velocity.
+- **The heartbeat** still leaves a window of up to 2 minutes; an offline lease closes it at the cost
+  of lower online availability.
+- **Preemption occasionally hurts an online customer.** The cost is measurable (compensation) and
+  smaller than rejecting a sale at the counter.
+- **Accepting stock discrepancies** means POS facts can "add" to recorded stock. The safeguards: a
+  signature per transaction, a cashier who must be permitted at that location, an anomaly for every
+  discrepancy, and stock counts.
 
-### 7.8 Metrik bisnis
+### 7.8 Business metrics
 
-| Metrik | Definisi |
+| Metric | Definition |
 |---|---|
-| **Konflik per 1.000 order online dari stok toko** | Ukuran utama apakah pencegahan bekerja |
-| **% realokasi otomatis berhasil** | Konflik `AUTO_RESOLVED` ÷ semua konflik preempt |
-| Waktu penyelesaian konflik | Dari konflik dibuat sampai `RESOLVED` |
-| Biaya kompensasi | Voucher + refund akibat preempt, per bulan |
-| Distribusi durasi offline per toko | Toko dengan koneksi buruk butuh buffer lebih besar atau lease |
-| p95 jeda sync | `received_at − occurred_at` |
-| Unit selisih stok per toko per bulan | Indikator kualitas penerimaan barang dan opname |
+| **Conflicts per 1,000 online orders fulfilled from store stock** | The main measure of whether prevention works |
+| **% reallocated automatically** | `AUTO_RESOLVED` conflicts ÷ all preemption conflicts |
+| Conflict resolution time | From conflict creation to `RESOLVED` |
+| Compensation cost | Vouchers + refunds caused by preemption, per month |
+| Offline duration distribution per store | Stores with poor connectivity need a larger buffer or a lease |
+| p95 sync lag | `received_at − occurred_at` |
+| Discrepancy units per store per month | An indicator of goods-receipt and stock-count quality |
 
-### 7.9 Rollout bertahap
+### 7.9 Staged rollout
 
-1. **Fase 1:** order online hanya dari gudang; toko berjalan dengan POS offline-first. Konflik
-   hampir nol, dan data offline per toko terkumpul.
-2. **Fase 2:** aktifkan fulfillment online di 1–2 toko pilot dengan buffer 2 unit + heartbeat.
-   Ukur konflik per 1.000 order dan biaya kompensasi.
-3. **Fase 3:** buffer per SKU berdasarkan kecepatan jual; offline lease untuk toko dengan koneksi
-   paling buruk.
+1. **Phase 1:** online orders only from warehouses; stores run the offline-first POS. Conflicts are
+   close to zero, and offline data per store accumulates.
+2. **Phase 2:** enable online fulfillment at 1–2 pilot stores with a 2-unit buffer + heartbeat.
+   Measure conflicts per 1,000 orders and the compensation cost.
+3. **Phase 3:** per-SKU buffers based on sales velocity; an offline lease for the stores with the
+   worst connectivity.
 
-### 7.10 Di prototype
+### 7.10 In the prototype
 
-| Komponen | Status | Bukti |
+| Component | Status | Evidence |
 |---|---|---|
-| Sync idempotent (duplikat, duplikat bersamaan, ID sama isi beda) | Dibangun | `TestPosSync_DuplicateBatch`, `TestPosSync_ConcurrentDuplicate`, `TestPosSync_SameIdDifferentPayload` |
-| Skenario persis kasus ini | Dibangun | `TestKasus4_OfflineSaleBeatsOnlineReservation`, `TestKasus4_NoStockAnywhere_NeedsAction` |
-| Urutan preempt dan selisih stok | Dibangun | `TestRecordFactSale_PreemptOrder`, `TestRecordFactSale_PreemptsSmallestSufficient`, `TestRecordFactSale_Discrepancy`, `TestRecordFactSale_QARepro_NoPhantomStock` |
-| Sync bersamaan dengan order online | Dibangun | `TestPosSync_ConcurrentWithOnlineOrders` |
-| Realokasi oleh worker | Dibangun | `TestReallocationHandler` |
-| Buffer online + heartbeat → OFFLINE | Dibangun | `TestOrder_OnlineATPForStores`, `TestPosHeartbeat_MarkOfflineThreshold`, `TestPosHeartbeat_TwoJobInstances` |
-| Signature, seq squatting, flag, batas | Dibangun | `TestPosSync_InvalidSignature`, `TestQA_SeqSquatting`, `TestPosSync_FlagsAndValidation`, `TestPosSync_BatchLimits`, `TestPosSync_SeqGapAndOrdering` |
-| Resolusi konflik oleh ops | Dibangun | `TestConflictResolve` |
-| Aplikasi POS offline di browser (IndexedDB outbox, layar kasir) | Desain: halaman `/pos` masih placeholder | — |
-| Penerbitan voucher dan eksekusi refund ke gateway | Desain: sistem mencatat pilihan resolusi dan permintaan refund (metadata + event), belum mengeksekusinya | — |
+| Idempotent sync (duplicate, concurrent duplicate, same ID with different content) | Built | `TestPosSync_DuplicateBatch`, `TestPosSync_ConcurrentDuplicate`, `TestPosSync_SameIdDifferentPayload` |
+| This exact scenario | Built | `TestKasus4_OfflineSaleBeatsOnlineReservation`, `TestKasus4_NoStockAnywhere_NeedsAction` |
+| Preemption order and stock discrepancy | Built | `TestRecordFactSale_PreemptOrder`, `TestRecordFactSale_PreemptsSmallestSufficient`, `TestRecordFactSale_Discrepancy`, `TestRecordFactSale_QARepro_NoPhantomStock` |
+| Sync concurrent with online orders | Built | `TestPosSync_ConcurrentWithOnlineOrders` |
+| Reallocation by the worker | Built | `TestReallocationHandler` |
+| Online buffer + heartbeat → OFFLINE | Built | `TestOrder_OnlineATPForStores`, `TestPosHeartbeat_MarkOfflineThreshold`, `TestPosHeartbeat_TwoJobInstances` |
+| Signatures, sequence squatting, flags, limits | Built | `TestPosSync_InvalidSignature`, `TestQA_SeqSquatting`, `TestPosSync_FlagsAndValidation`, `TestPosSync_BatchLimits`, `TestPosSync_SeqGapAndOrdering` |
+| Conflict resolution by ops | Built | `TestConflictResolve` |
+| In-browser offline POS app (IndexedDB outbox, cashier screen) | Design: the `/pos` page is still a placeholder | — |
+| Issuing vouchers and executing refunds at the gateway | Design: the system records the resolution options and the refund request (metadata + event) but does not execute them | — |
 
 ---
 
-## 8. Pilar D: Supply Chain Command Center
+## 8. Pillar D: Supply Chain Command Center
 
-Command Center menjawab tiga pertanyaan setiap pagi: **di mana stok akan habis, distributor mana
-yang bocor, dan konflik apa yang belum selesai.**
+The Command Center answers three questions every morning: **which stock will run out, which
+distributor is leaking, and which conflicts are still open.**
 
-| Pertanyaan | Endpoint | Isi |
+| Question | Endpoint | Contents |
 |---|---|---|
-| Ringkasan | `GET /cc/summary` | Jumlah item kritis/waspada dan lokasinya, tanggal habis terdekat, stok habis, anomali dan konflik terbuka, status sync toko. Frontend akan menuliskannya sebagai kalimat dulu, baru tabel |
-| Stok di mana | `GET /cc/stock` | Saldo per lokasi. Stok di lokasi bukan milik sendiri (gudang mitra, marketplace) ditandai `is_estimate`, tidak disajikan sebagai fakta |
-| Kapan habis | `GET /cc/runout` | DOI dan tanggal habis per `(lokasi, produk)` |
-| Distributor mana bocor | `GET /cc/distribution-leakage` | Indeks kebocoran per distributor (kasus 1) |
-| Anomali | `GET /cc/anomalies`, `PATCH /cc/anomalies/:id` | Antrean kerja `OPEN → ACK → RESOLVED / FALSE_POSITIVE`, dengan audit |
-| Konflik | `GET /cc/conflicts`, `POST /cc/conflicts/:id/resolve` | Konflik alokasi dari POS (kasus 4) |
+| Summary | `GET /cc/summary` | Counts of critical/warning items and their locations, the earliest runout date, stockouts, open anomalies and conflicts, store sync status. The frontend will render it as a sentence first, then tables |
+| Where is the stock | `GET /cc/stock` | Balance per location. Stock at locations we do not own (partner warehouses, marketplaces) is flagged `is_estimate` and never presented as fact |
+| When will it run out | `GET /cc/runout` | DOI and runout date per `(location, product)` |
+| Which distributor is leaking | `GET /cc/distribution-leakage` | Leakage index per distributor (Case 1) |
+| Anomalies | `GET /cc/anomalies`, `PATCH /cc/anomalies/:id` | Work queue `OPEN → ACK → RESOLVED / FALSE_POSITIVE`, audited |
+| Conflicts | `GET /cc/conflicts`, `POST /cc/conflicts/:id/resolve` | Allocation conflicts from the POS (Case 4) |
 
-**Runout dan DOI**
+**Runout and DOI**
 
-- `avg_daily_sales` = unit terjual (`DIRECT_SALE` + `COMMIT_SALE`) dalam jendela 28 hari ÷
-  `history_days`. `history_days` adalah umur riwayat `(lokasi, produk)`, maksimal 28: SKU yang
-  baru dua hari tidak dibagi 28 hari, karena itu membuat DOI 14 kali terlalu optimistis.
-- `DOI = available ÷ avg_daily_sales`; `runout_date = hari ini + DOI`.
-- `CRITICAL` kalau DOI < lead time, atau stok habis padahal masih laku. `WARNING` kalau DOI < lead
-  time + safety days, atau stok di bawah `min_qty`.
-- SKU tanpa riwayat penjualan → `INSUFFICIENT_DATA`, bukan angka palsu. Riwayat kurang dari 7 hari
-  diberi tanda `SHORT_HISTORY`.
-- Musim (Ramadan/Lebaran, 11.11, 12.12): fase lanjut memakai EWMA + faktor musiman dari tahun
-  sebelumnya.
+- `avg_daily_sales` = units sold (`DIRECT_SALE` + `COMMIT_SALE`) in the 28-day window ÷
+  `history_days`. `history_days` is the age of the `(location, product)` history, capped at 28: a
+  SKU that is two days old is not divided by 28 days, which would make its DOI 14 times too
+  optimistic.
+- `DOI = available ÷ avg_daily_sales`; `runout_date = today + DOI`.
+- `CRITICAL` when DOI < lead time, or when stock is out while the item is still selling. `WARNING`
+  when DOI < lead time + safety days, or when stock is below `min_qty`.
+- A SKU with no sales history → `INSUFFICIENT_DATA`, not a made-up number. Less than 7 days of
+  history is flagged `SHORT_HISTORY`.
+- Seasonality (Ramadan/Lebaran, 11.11, 12.12): a later phase uses EWMA + seasonal factors from the
+  previous year.
 
-**Metrik untuk pilar D:** hari stockout yang dihindari, akurasi DOI (DOI yang diprediksi vs hari
-habis sebenarnya), rasio false positive anomali per aturan, waktu dari anomali dibuat sampai
-`ACK`.
+**Metrics for Pillar D:** stockout days avoided, DOI accuracy (predicted DOI vs. the actual day stock
+ran out), false-positive rate per anomaly rule, time from anomaly creation to `ACK`.
 
-**Status:** semua endpoint di atas dibangun dan teruji (`TestRunout_LevelsDOIAndOrder`,
-`TestRunout_ShortHistoryAndRounding`, `TestStock_VisibilityFiltersAndKeyset`,
-`TestSummary_Facts`, `TestAnomaly_Transitions`, `TestScope_SelectedSeesOnlyOwnLocations`).
-Layar console masih placeholder. Karena shipment belum menggerakkan saldo stok (ARCHITECTURE §9,
-I4), stok di gudang mitra belum terisi dari shipment.
+**Status:** every endpoint above is built and tested (`TestRunout_LevelsDOIAndOrder`,
+`TestRunout_ShortHistoryAndRounding`, `TestStock_VisibilityFiltersAndKeyset`, `TestSummary_Facts`,
+`TestAnomaly_Transitions`, `TestScope_SelectedSeesOnlyOwnLocations`). The console screens are still
+placeholders. Because shipments do not move stock balances yet (ARCHITECTURE §9, I4), partner
+warehouse stock is not filled from shipments.
 
 ---
 
-## 9. Metrik utama
+## 9. Key metrics
 
-Satu metrik utama per area, supaya keberhasilan sistem tidak diukur dari jumlah fitur:
+One headline metric per area, so the system's success is not measured by its feature count:
 
-| Area | Metrik utama | Metrik penjaga |
+| Area | Headline metric | Guardrail metric |
 |---|---|---|
-| Kasus 1 / Pilar A | Subsidi yang diselamatkan (Rp/bulan) | Rasio false positive anomali kebocoran |
-| Kasus 2 | Biaya poin per pembelian ulang inkremental | Tingkat klaim yang dibalik, SLA review |
-| Kasus 3 | Cost per verified purchase | Cakupan atribusi deterministik |
-| Kasus 4 / Pilar C | Konflik per 1.000 order online dari stok toko | Biaya kompensasi, p95 jeda sync |
-| Pilar B | Insiden oversell per 1.000 order (target 0) | Order `NEEDS_ACTION` per 1.000 order |
-| Pilar D | Hari stockout yang dihindari | Akurasi DOI |
+| Case 1 / Pillar A | Subsidy saved (IDR/month) | Leakage anomaly false-positive rate |
+| Case 2 | Point cost per incremental repeat purchase | Reversed-claim rate, review SLA |
+| Case 3 | Cost per verified purchase | Deterministic attribution coverage |
+| Case 4 / Pillar C | Conflicts per 1,000 online orders fulfilled from store stock | Compensation cost, p95 sync lag |
+| Pillar B | Oversell incidents per 1,000 orders (target 0) | `NEEDS_ACTION` orders per 1,000 orders |
+| Pillar D | Stockout days avoided | DOI accuracy |
 
 ---
 
 ## 10. Roadmap
 
-Urutan kerja setelah prototype, dari yang menutup risiko terbesar:
+Work after the prototype, ordered by the size of the risk it closes:
 
-1. **Integrasi antar modul** (ARCHITECTURE §9): cek scope per permission di semua modul (I1),
-   fulfill mengubah serial ke `SOLD` (I2), shipment dan recall menggerakkan saldo stok (I4), job
-   pelepasan poin dan pembersihan sesi (I3), rekonsiliasi `LEDGER_DRIFT` (I5).
-2. **Aplikasi POS offline** (Dexie outbox + sync engine + layar kasir) dan **halaman verifikasi**
-   konsumen di lebar 360 px.
-3. **Console Command Center**: ringkasan kalimat, runout, antrean anomali dan konflik, trace serial.
-4. **Endpoint test-buy** dan geolokasi IP untuk scan tanpa GPS.
-5. **Kasus 3**: link kampanye, touchpoint, konversi offline ke platform iklan, geo-lift.
-6. **Portal distributor** dengan scan keluar.
+1. **Integration between modules** (ARCHITECTURE §9): per-permission scope checks in every module
+   (I1), fulfillment moves serials to `SOLD` (I2), shipments and recalls move stock balances (I4),
+   the point release and session cleanup jobs (I3), `LEDGER_DRIFT` reconciliation (I5).
+2. **The offline POS app** (Dexie outbox + sync engine + cashier screen) and **the consumer
+   verification page** at 360 px width.
+3. **The Command Center console**: summary sentence, runout, anomaly and conflict queues, serial
+   trace.
+4. **A test-buy endpoint** and IP geolocation for scans without GPS.
+5. **Case 3**: campaign links, touchpoints, offline conversions to ad platforms, geo-lift.
+6. **A distributor portal** with outbound scans.
 
 ---
 
-## 11. Pertanyaan yang hampir pasti muncul
+## 11. Questions that will almost certainly come up
 
-**Kenapa stok tidak di Redis?** Redis cepat, tetapi stok di Redis berarti dual-write ke database
-yang rawan tidak konsisten. Conditional update di Postgres sudah membuktikan 100 request bersamaan
-untuk 10 unit menghasilkan tepat 10 reservasi, dengan ledger di transaksi yang sama. Jalur untuk
-flash sale adalah memecah saldo hot row, bukan memindahkan sumber kebenaran.
+**Why not keep stock in Redis?** Redis is fast, but stock in Redis means a dual write to the
+database, which drifts. The conditional update in Postgres has already shown that 100 concurrent
+requests for 10 units produce exactly 10 reservations, with the ledger in the same transaction. The
+path for flash sales is splitting the hot row, not moving the source of truth.
 
-**Kenapa tidak SERIALIZABLE?** SERIALIZABLE membatalkan transaksi yang bertabrakan dan memaksa
-retry di semua jalur, justru saat lonjakan. Di READ COMMITTED, Postgres mengevaluasi ulang `WHERE`
-setelah menunggu lock, jadi conditional update sudah aman tanpa abort.
+**Why not SERIALIZABLE?** SERIALIZABLE aborts conflicting transactions and forces retries on every
+path, exactly during a spike. At READ COMMITTED, Postgres re-evaluates `WHERE` after waiting for the
+lock, so the conditional update is already safe without aborts.
 
-**Bagaimana kalau PIN bocor dari vendor cetak?** Itu titik terlemah, dan diakui. PIN plaintext
-hanya ada di respons mint, bahan file cetak. Mitigasi proses: kontrak dan audit vendor, file
-dienkripsi dan dihapus setelah cetak, rekonsiliasi per job cetak (label dicetak vs di-commission vs
-di-void; kolomnya sudah ada di `code_batches`, alurnya belum dibangun). Mitigasi yang sudah
-berjalan di kode: kode yang dipindai konsumen padahal masih `GENERATED` atau belum pernah keluar
-gudang pusat langsung menjadi anomali severity tinggi yang menunjuk job cetak asalnya, dan klaim
-poin atas unit yang belum terjual ditolak.
+**What if PINs leak from the print vendor?** That is the weakest point, and we say so. The plaintext
+PIN only exists in the mint response, the input for the print file. Process mitigations: the vendor
+contract and audits, a print file that is encrypted and deleted after printing, and reconciliation
+per print job (labels printed vs. commissioned vs. voided; the columns exist in `code_batches`, the
+workflow is not built). Mitigations already running in the code: a code scanned by a consumer while
+still `GENERATED`, or before it ever left the central warehouse, immediately raises a high-severity
+anomaly that points to its print job, and point claims on unsold units are rejected.
 
-**Bagaimana dengan false positive radar?** Konsumen tidak pernah dihukum: `OUT_OF_TERRITORY` tidak
-terlihat konsumen, impossible travel dari perangkat yang sama hanya anomali internal, velocity
-butuh banyak perangkat dan banyak jaringan sekaligus. Setiap anomali punya status `FALSE_POSITIVE`,
-dan rasionya per aturan menjadi metrik kualitas; ambang ada di `anomaly_rules.params` dan bisa
-diubah tanpa deploy.
+**What about radar false positives?** Consumers are never penalized: `OUT_OF_TERRITORY` is invisible
+to them, impossible travel from the same device is only an internal anomaly, and velocity needs many
+devices and many networks at once. Every anomaly can be closed as `FALSE_POSITIVE`, and that ratio
+per rule is a quality metric; thresholds live in `anomaly_rules.params` and change without a deploy.
 
-**Label gosok mahal?** Setuju, makanya fase 1 tidak memakainya. PIN dicetak di balik label tanpa
-mengubah bentuk kemasan; lapisan fisik hanya untuk SKU atau wilayah yang fraud-nya terukur lebih
-besar dari biaya label.
+**Scratch-off labels are expensive?** Agreed, which is why phase 1 does not use them. The PIN is
+printed on the back of the label without changing the pack shape; the physical layer only goes to
+SKUs or regions where measured fraud exceeds the label cost.
 
-**Kalau hanya bisa satu, mana yang diprioritaskan?** Fondasi serialisasi + agregasi, karena tanpa
-itu kasus 1, 2, dan 3 tidak punya data. Dari sisi uang langsung, kasus 1 (subsidi bocor) biasanya
-paling besar; dari sisi reputasi, anti-counterfeit.
+**If you could do only one, which would it be?** The serialization + aggregation foundation, because
+without it Cases 1, 2, and 3 have no data. In direct money, Case 1 (leaking subsidies) is usually the
+largest; in reputation, anti-counterfeit.
 
-**Bagaimana kalau operator line tidak disiplin scan agregasi?** Sistem menolak karton yang melebihi
-kapasitas dan unit yang sudah punya induk lain. Di sisi proses: rekonsiliasi jumlah unit per batch
-vs yang di-commission per shift (laporan ini belum dibangun), target per shift, dan scanner dengan
-umpan balik suara.
+**What if line operators are not disciplined about aggregation scans?** The system rejects cartons
+over capacity and units that already have another parent. On the process side: per-shift
+reconciliation of units per batch vs. units commissioned (this report is not built yet), per-shift
+targets, and scanners with audible feedback.
 
-**Bagaimana meyakinkan distributor ikut?** Data yang sama melindungi distributor resmi dari gray
-market di wilayah mereka sendiri. Itu insentif, bukan hanya pengawasan.
+**How do you get distributors on board?** The same data protects official distributors from gray
+market goods in their own territory. That is an incentive, not just surveillance.
