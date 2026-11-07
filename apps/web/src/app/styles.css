@@ -154,4 +154,30 @@
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-ring;
   }
+  /* Kontrol native (select, checkbox, scrollbar) mengikuti tema aktif. */
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+  /* Preflight Tailwind membuat tombol bercursor default; semua kontrol aktif
+     memakai pointer, kontrol nonaktif not-allowed. */
+  a[href],
+  button,
+  summary,
+  select,
+  label[for],
+  label:has(> input[type="checkbox"], > input[type="radio"]),
+  [role="button"],
+  [role="menuitem"],
+  [role="option"],
+  input[type="checkbox"],
+  input[type="radio"] {
+    cursor: pointer;
+  }
+  :disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
 }

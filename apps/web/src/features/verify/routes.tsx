@@ -1,5 +1,7 @@
 import type { RouteObject } from "react-router";
-import { VerifyPage } from "./verify-page";
 
 // Halaman publik konsumen dari QR hologram. Path relatif terhadap /v.
-export const verifyRoutes: RouteObject[] = [{ path: ":code", element: <VerifyPage /> }];
+// Dimuat terpisah supaya ponsel konsumen tidak mengunduh kode console.
+export const verifyRoutes: RouteObject[] = [
+  { path: ":code", lazy: async () => ({ Component: (await import("./verify-page")).VerifyPage }) },
+];
