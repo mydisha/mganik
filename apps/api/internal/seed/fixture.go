@@ -30,6 +30,9 @@ const (
 	CartonsPerPallet = 4
 	// DemoUnitCount = 1 palet x 4 karton x 12 unit.
 	DemoUnitCount = UnitsPerCarton * CartonsPerPallet
+	// DemoStoreUnitIndex: indeks unit serial demo ke-49, di luar palet (lihat
+	// DemoStoreUnit).
+	DemoStoreUnitIndex = DemoUnitCount
 
 	// DemoCashierPIN adalah PIN POS kasir demo (6 digit, di-hash argon2id).
 	DemoCashierPIN = "135790"
@@ -121,6 +124,15 @@ func DemoUnits() []DemoUnit {
 		}
 	}
 	return units
+}
+
+// DemoStoreUnit adalah unit lepas (tanpa karton) dari lot demo yang sama, yang
+// sudah ada di Toko Jakarta Selatan. Unit ini adalah unit terakhir SKU1 di toko
+// itu (saldo 1, skenario Kasus 4), sehingga kasir bisa memindai hologramnya.
+// Palet 48 unit di gudang pusat tidak berubah.
+func DemoStoreUnit() DemoUnit {
+	i := DemoStoreUnitIndex
+	return DemoUnit{Index: i, ID: DemoSerialID("UNIT", i), Code: DemoSerialCode("UNIT", i), PIN: DemoClaimPIN(i)}
 }
 
 // ------------------------------------------------------------------ kode master data

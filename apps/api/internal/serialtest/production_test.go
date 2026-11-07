@@ -180,17 +180,19 @@ func TestRecallBatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 1 palet + 4 karton + 47 unit IN_STOCK.
-	if res.Quarantined != 52 || res.AlreadyRecalled {
+	// 1 palet + 4 karton + 47 unit palet IN_STOCK + 1 unit di Toko Jakarta
+	// Selatan (seed.DemoStoreUnit, lot yang sama).
+	const wantQuarantined = 53
+	if res.Quarantined != wantQuarantined || res.AlreadyRecalled {
 		t.Fatalf("recall %+v", res)
 	}
 	if s := f.status(unit(47).Code); s != domain.SerialSold {
 		t.Fatalf("unit terjual berubah menjadi %s", s)
 	}
-	if n := f.count(`SELECT count(*) FROM serial_units WHERE batch_id = ? AND status = 'QUARANTINED'`, seed.BatchID()); n != 52 {
+	if n := f.count(`SELECT count(*) FROM serial_units WHERE batch_id = ? AND status = 'QUARANTINED'`, seed.BatchID()); n != wantQuarantined {
 		t.Fatalf("QUARANTINED %d", n)
 	}
-	if n := f.count(`SELECT count(*) FROM unit_events WHERE biz_step = 'holding' AND to_status = 'QUARANTINED' AND ref_id = ?`, seed.BatchID()); n != 52 {
+	if n := f.count(`SELECT count(*) FROM unit_events WHERE biz_step = 'holding' AND to_status = 'QUARANTINED' AND ref_id = ?`, seed.BatchID()); n != wantQuarantined {
 		t.Fatalf("event holding %d", n)
 	}
 	var stored string

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -220,7 +221,8 @@ type bootstrapBody struct {
 
 func TestPosBootstrap(t *testing.T) {
 	e := newEnv(t)
-	// 2.003 serial UNIT IN_STOCK di toko: lebih dari satu halaman.
+	// 2.003 serial UNIT di toko (satu SOLD) ditambah unit toko dari seed
+	// (seed.DemoStoreUnit): 2.003 IN_STOCK, lebih dari satu halaman.
 	e.exec(`
 		INSERT INTO serial_units (id, code, level_code, product_id, batch_id, status, location_id)
 		SELECT gen_random_uuid(), 'T' || lpad(g::text, 15, '0'), 'UNIT', ?, ?, 'IN_STOCK', ?
@@ -246,17 +248,27 @@ func TestPosBootstrap(t *testing.T) {
 	if len(b.Serials.Items) != service.PosSerialPageSize || b.Serials.NextCursor == nil {
 		t.Fatalf("halaman serial pertama %d, cursor %v", len(b.Serials.Items), b.Serials.NextCursor)
 	}
-	if b.Serials.Items[0].Code != "T000000000000002" {
-		t.Fatalf("serial SOLD tidak boleh ikut: %s", b.Serials.Items[0].Code)
-	}
 	r = e.device(http.MethodGet, "/api/v1/pos/bootstrap/serials?cursor="+*b.Serials.NextCursor, e.token, nil)
 	var next struct {
 		Items      []struct{ Code string } `json:"items"`
 		NextCursor *string                 `json:"next_cursor"`
 	}
 	r.decode(t, &next)
-	if len(next.Items) != 2 || next.NextCursor != nil {
+	if len(next.Items) != 3 || next.NextCursor != nil {
 		t.Fatalf("halaman kedua: %d %v", len(next.Items), next.NextCursor)
+	}
+	var codes []string
+	for _, s := range append(b.Serials.Items, next.Items...) {
+		codes = append(codes, s.Code)
+	}
+	if !slices.IsSorted(codes) {
+		t.Fatal("serial bootstrap tidak urut kode (cursor keyset)")
+	}
+	if slices.Contains(codes, "T000000000000001") {
+		t.Fatal("serial SOLD tidak boleh ikut")
+	}
+	if !slices.Contains(codes, seed.DemoStoreUnit().Code) {
+		t.Fatal("unit toko dari seed tidak ikut bootstrap")
 	}
 	if r := e.device(http.MethodGet, "/api/v1/pos/bootstrap/serials?cursor=rusak", e.token, nil); r.Code != 422 {
 		t.Fatalf("cursor rusak: %d", r.Code)

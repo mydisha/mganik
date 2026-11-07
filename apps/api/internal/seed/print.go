@@ -23,6 +23,8 @@ func PrintDemo(w io.Writer) error {
 	for _, u := range DemoUnits() {
 		p("%d\t%s\t%s\t%s\n", u.Index+1, u.Code, u.PIN, u.CartonCode)
 	}
+	su := DemoStoreUnit()
+	p("%d\t%s\t%s\tnone, in store %s\n", su.Index+1, su.Code, su.PIN, StoreJakselCode)
 
 	p("\nAKUN\tROLE\tSCOPE\n")
 	for _, a := range DemoAccounts {

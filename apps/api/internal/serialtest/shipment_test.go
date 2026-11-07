@@ -125,6 +125,9 @@ func TestShipment_Rejections(t *testing.T) {
 	})
 	requireCode(t, err, "empty_container")
 	// Unit dari karton yang sudah dibongkar bisa dikirim satuan ke toko → IN_STOCK.
+	// Toko sudah punya unit dari seed (seed.DemoStoreUnit), jadi hitung selisihnya.
+	inStoreQ := `SELECT count(*) FROM serial_units WHERE location_id = ? AND status = 'IN_STOCK' AND custodian_party_id = ?`
+	inStoreBefore := f2.count(inStoreQ, locJaksel, partyCo)
 	one, err := f2.serials.CreateShipment(f2.ctx, f2.admin(), service.CreateShipmentInput{
 		FromLocationID: locCentral, ToLocationID: locJaksel, Codes: []string{unit(36).Code, cartonCode(0)},
 	})
@@ -140,8 +143,8 @@ func TestShipment_Rejections(t *testing.T) {
 	if s := f2.status(unit(36).Code); s != domain.SerialInStock {
 		t.Fatalf("diterima toko sendiri: %s, ingin IN_STOCK", s)
 	}
-	if n := f2.count(`SELECT count(*) FROM serial_units WHERE location_id = ? AND status = 'IN_STOCK' AND custodian_party_id = ?`, locJaksel, partyCo); n != 14 {
-		t.Fatalf("serial di toko %d", n)
+	if n := f2.count(inStoreQ, locJaksel, partyCo) - inStoreBefore; n != 14 {
+		t.Fatalf("serial baru di toko %d, ingin 14", n)
 	}
 	// Shipment tidak ada / bukan SHIPPED.
 	_, err = f2.serials.ReceiveShipment(f2.ctx, f2.admin(), uuid.Must(uuid.NewV7()))

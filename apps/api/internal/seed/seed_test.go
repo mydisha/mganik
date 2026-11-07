@@ -154,7 +154,7 @@ func TestRun_Idempotent(t *testing.T) {
 
 	// Jumlah kunci fixture.
 	for q, want := range map[string]int64{
-		`SELECT count(*) FROM serial_units WHERE level_code = 'UNIT'`:   48,
+		`SELECT count(*) FROM serial_units WHERE level_code = 'UNIT'`:   seed.DemoUnitCount + 1, // + unit toko
 		`SELECT count(*) FROM serial_units WHERE level_code = 'CARTON'`: 4,
 		`SELECT count(*) FROM serial_units WHERE level_code = 'PALLET'`: 1,
 		`SELECT count(*) FROM products`:                                 2,
@@ -217,9 +217,11 @@ func TestSeed_LedgerMatchesBalances(t *testing.T) {
 
 func TestSeed_PackagingHierarchy(t *testing.T) {
 	db := seeded(t)
+	// Unit toko (DemoStoreUnit) sengaja lepas di luar palet; dicek di TestSeed_StoreUnit.
+	storeID := seed.DemoStoreUnit().ID.String()
 	checks := map[string]string{
 		"unit tanpa karton induk": `SELECT count(*) FROM serial_units u LEFT JOIN serial_units p ON p.id = u.parent_id
-			WHERE u.level_code = 'UNIT' AND (p.id IS NULL OR p.level_code <> 'CARTON')`,
+			WHERE u.level_code = 'UNIT' AND (p.id IS NULL OR p.level_code <> 'CARTON') AND u.id <> '` + storeID + `'`,
 		"karton tanpa palet induk": `SELECT count(*) FROM serial_units c LEFT JOIN serial_units p ON p.id = c.parent_id
 			WHERE c.level_code = 'CARTON' AND (p.id IS NULL OR p.level_code <> 'PALLET')`,
 		"palet punya induk": `SELECT count(*) FROM serial_units WHERE level_code = 'PALLET' AND parent_id IS NOT NULL`,
@@ -227,8 +229,8 @@ func TestSeed_PackagingHierarchy(t *testing.T) {
 			WHERE c.level_code = 'CARTON' AND (SELECT count(*) FROM serial_units u WHERE u.parent_id = c.id) <> 12`,
 		"palet tidak berisi 4 karton": `SELECT count(*) FROM serial_units p
 			WHERE p.level_code = 'PALLET' AND (SELECT count(*) FROM serial_units c WHERE c.parent_id = p.id) <> 4`,
-		"serial tidak IN_STOCK di gudang pusat": `SELECT count(*) FROM serial_units WHERE status <> 'IN_STOCK' OR location_id <> '` +
-			seed.LocationID(seed.CentralWHCode).String() + `' OR batch_id IS NULL`,
+		"serial tidak IN_STOCK di gudang pusat": `SELECT count(*) FROM serial_units WHERE (status <> 'IN_STOCK' OR location_id <> '` +
+			seed.LocationID(seed.CentralWHCode).String() + `' OR batch_id IS NULL) AND id <> '` + storeID + `'`,
 		// Riwayat event hanya memakai transisi yang ada di state machine.
 		"event dengan transisi tidak terdaftar": `SELECT count(*) FROM unit_events e
 			WHERE e.to_status IS NOT NULL AND NOT EXISTS (SELECT 1 FROM lifecycle_transitions lt
@@ -241,6 +243,106 @@ func TestSeed_PackagingHierarchy(t *testing.T) {
 		if n := count(t, db, q); n != 0 {
 			t.Errorf("%s: %d baris", name, n)
 		}
+	}
+}
+
+// Unit terakhir SKU1 di Toko Jakarta Selatan (Kasus 4) adalah unit serial lepas
+// yang bisa dipindai kasir: saldo toko = jumlah serial IN_STOCK di toko, dan
+// riwayatnya berakhir di toko dengan custodian party toko.
+func TestSeed_StoreUnit(t *testing.T) {
+	db := seeded(t)
+	store := seed.DemoStoreUnit()
+	jaksel, sku1 := seed.LocationID(seed.StoreJakselCode), seed.ProductID(seed.SKU1)
+
+	var su model.SerialUnit
+	if err := db.First(&su, "id = ?", store.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if su.Code != store.Code || su.LevelCode != "UNIT" || su.Status != "IN_STOCK" || su.ParentID != nil ||
+		su.LocationID == nil || *su.LocationID != jaksel || su.BatchID == nil || *su.BatchID != seed.BatchID() ||
+		su.ProductID == nil || *su.ProductID != sku1 {
+		t.Fatalf("unit toko: %+v", su)
+	}
+	if party := scanString(t, db, `SELECT party_id::text FROM locations WHERE id = ?`, jaksel); su.CustodianPartyID == nil || su.CustodianPartyID.String() != party {
+		t.Fatalf("custodian unit toko %v, ingin party toko %s", su.CustodianPartyID, party)
+	}
+	if !domain.VerifyClaimPIN(testPepper, store.ID, store.PIN, su.ClaimSecretHash) {
+		t.Fatal("PIN klaim unit toko tidak terverifikasi")
+	}
+
+	serials := count(t, db, `SELECT count(*) FROM serial_units WHERE level_code = 'UNIT' AND status = 'IN_STOCK'
+	                          AND location_id = ? AND product_id = ?`, jaksel, sku1)
+	bal := count(t, db, `SELECT physical_qty FROM inventory_balances WHERE location_id = ? AND product_id = ?`, jaksel, sku1)
+	if serials != 1 || bal != 1 {
+		t.Fatalf("toko Jakarta Selatan: %d serial SKU1, saldo %d, ingin 1 dan 1", serials, bal)
+	}
+	// Event terakhir yang mengubah status terjadi di toko, dengan custodian yang sama.
+	if n := count(t, db, `SELECT count(*) FROM (
+	                        SELECT location_id, party_id FROM unit_events WHERE serial_unit_id = ? AND to_status IS NOT NULL
+	                         ORDER BY occurred_at DESC LIMIT 1) e
+	                       WHERE e.location_id = ? AND e.party_id = ?`, store.ID, jaksel, *su.CustodianPartyID); n != 1 {
+		t.Fatal("event terakhir unit toko bukan penerimaan di toko")
+	}
+	// Code batch UNIT palet tetap berisi tepat 48 kode; kode unit toko di code batch sendiri.
+	for name, want := range map[string]int64{
+		"code_batch:UNIT":                         seed.DemoUnitCount,
+		"code_batch:UNIT:" + seed.StoreJakselCode: 1,
+	} {
+		if n := count(t, db, `SELECT count(*) FROM serial_units s JOIN code_batches cb ON cb.id = s.code_batch_id
+		                       WHERE cb.id = ? AND cb.qty = ?`, seed.ID(name), want); n != want {
+			t.Errorf("%s: %d kode, ingin %d (sama dengan qty)", name, n, want)
+		}
+	}
+}
+
+// Database yang di-seed sebelum unit toko punya serial (saldo toko 1 tanpa
+// serial) mendapat unit toko saat seed ulang, tanpa mengubah saldo maupun ledger.
+func TestRun_AddsStoreUnitToOlderSeed(t *testing.T) {
+	db := seeded(t)
+	store := seed.DemoStoreUnit()
+	// Buang jejak unit toko untuk meniru database versi lama. unit_events
+	// append-only, jadi trigger dimatikan hanya di transaksi simulasi ini.
+	err := db.Transaction(func(tx *gorm.DB) error {
+		for _, q := range []string{
+			`SET LOCAL session_replication_role = replica`,
+			`DELETE FROM unit_events WHERE serial_unit_id = '` + store.ID.String() + `'`,
+			`DELETE FROM serial_units WHERE id = '` + store.ID.String() + `'`,
+			`DELETE FROM code_batches WHERE id = '` + seed.ID("code_batch:UNIT:"+seed.StoreJakselCode).String() + `'`,
+		} {
+			if err := tx.Exec(q).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := tableDigests(t, db)
+
+	res, err := seed.Run(context.Background(), db, options(quietLog()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Inserted["serial_units"] != 1 || res.Inserted["code_batches"] != 1 {
+		t.Fatalf("baris baru %v, ingin 1 serial dan 1 code batch", res.Inserted)
+	}
+	// Jumlah event dicek di tabel, bukan dari Result.Inserted: untuk INSERT ...
+	// ON CONFLICT DO NOTHING RETURNING, GORM menghitung seluruh batch sebagai
+	// baru begitu ada satu baris masuk kalau kolom ber-default (recorded_at,
+	// payload) diisi eksplisit.
+	if n := count(t, db, `SELECT count(*) FROM unit_events WHERE serial_unit_id = ?`, store.ID); n != 2 {
+		t.Fatalf("event unit toko %d, ingin 2 (commission, diterima toko)", n)
+	}
+	after := tableDigests(t, db)
+	for _, tbl := range []string{"inventory_balances", "inventory_movements"} {
+		if after[tbl] != before[tbl] {
+			t.Errorf("isi %s berubah saat unit toko ditambahkan", tbl)
+		}
+	}
+	if s := scanString(t, db, `SELECT status FROM serial_units WHERE id = ? AND location_id = ?`,
+		store.ID, seed.LocationID(seed.StoreJakselCode)); s != "IN_STOCK" {
+		t.Fatalf("unit toko setelah seed ulang: %q", s)
 	}
 }
 
@@ -444,10 +546,12 @@ func TestRun_RehashesClaimsWhenPepperChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.ClaimHashesUpdated != seed.DemoUnitCount || res.Total() != 0 {
-		t.Fatalf("hash diperbarui %d (ingin %d), baris baru %d (ingin 0)", res.ClaimHashesUpdated, seed.DemoUnitCount, res.Total())
+	// Semua unit demo: 48 unit palet + unit toko.
+	units := append(seed.DemoUnits(), seed.DemoStoreUnit())
+	if res.ClaimHashesUpdated != int64(len(units)) || res.Total() != 0 {
+		t.Fatalf("hash diperbarui %d (ingin %d), baris baru %d (ingin 0)", res.ClaimHashesUpdated, len(units), res.Total())
 	}
-	for _, u := range seed.DemoUnits() {
+	for _, u := range units {
 		var su model.SerialUnit
 		if err := db.First(&su, "id = ?", u.ID).Error; err != nil {
 			t.Fatal(err)

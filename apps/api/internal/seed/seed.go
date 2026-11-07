@@ -399,8 +399,12 @@ func (s *seeder) serials() error {
 			ReconciledAt: ptr(at(1, 0)), CreatedBy: ptr(operator),
 		}
 	}
+	// Kode unit toko (DemoStoreUnit) dicetak di code batch sendiri, jadi code
+	// batch UNIT palet tetap berisi tepat DemoUnitCount kode.
+	storeCodeBatch := codeBatch("UNIT", 1)
+	storeCodeBatch.ID = ID("code_batch:UNIT:" + StoreJakselCode)
 	if err := insert(s, []model.CodeBatch{
-		codeBatch("PALLET", 1), codeBatch("CARTON", CartonsPerPallet), codeBatch("UNIT", DemoUnitCount),
+		codeBatch("PALLET", 1), codeBatch("CARTON", CartonsPerPallet), codeBatch("UNIT", DemoUnitCount), storeCodeBatch,
 	}); err != nil {
 		return err
 	}
@@ -435,6 +439,14 @@ func (s *seeder) serials() error {
 		su.ClaimSecretHash = domain.ClaimSecretHash(s.opts.Pepper, u.ID, u.PIN)
 		units = append(units, su)
 	}
+	// Unit lepas di Toko Jakarta Selatan: tanpa karton, custodian = party toko
+	// (perusahaan). Saldo SKU1 toko (1, Kasus 4) adalah unit ini.
+	store := DemoStoreUnit()
+	storeUnit := serial("UNIT", store.Index, nil)
+	storeUnit.CodeBatchID = ptr(storeCodeBatch.ID)
+	storeUnit.LocationID = ptr(LocationID(StoreJakselCode))
+	storeUnit.ClaimSecretHash = domain.ClaimSecretHash(s.opts.Pepper, store.ID, store.PIN)
+	units = append(units, storeUnit)
 	// Induk dulu supaya FK parent_id terpenuhi.
 	for _, batch := range [][]model.SerialUnit{pallet, cartons} {
 		if err := insert(s, batch); err != nil {
@@ -472,23 +484,30 @@ func (s *seeder) serials() error {
 	s.res.Inserted["serial_units"] += fresh
 	s.res.ClaimHashesUpdated += res.RowsAffected - fresh
 
-	// Riwayat EPCIS: commission → packing (unit ke karton, karton ke palet) →
-	// diterima gudang pusat.
+	// Riwayat EPCIS: commission di line produksi gudang pusat → packing (unit ke
+	// karton, karton ke palet) → diterima di lokasinya. Unit toko tidak dikemas
+	// dan diterima langsung oleh toko sehari kemudian, sehingga ledger toko
+	// (RECEIPT 1) cocok dengan event-nya dan ledger gudang pusat tidak berubah.
 	var events []model.UnitEvent
 	for _, su := range append(append(pallet, cartons...), units...) {
-		ev := func(step string, from, to *string, parent *uuid.UUID, actor uuid.UUID, hours int) model.UnitEvent {
+		ev := func(step string, from, to *string, parent *uuid.UUID, loc, actor uuid.UUID, hours int) model.UnitEvent {
 			return model.UnitEvent{
 				ID: ID("unit_event:" + su.Code + ":" + step), SerialUnitID: su.ID, BizStep: step,
-				FromStatus: from, ToStatus: to, ParentID: parent, LocationID: ptr(central), PartyID: ptr(company),
+				FromStatus: from, ToStatus: to, ParentID: parent, LocationID: ptr(loc), PartyID: ptr(company),
 				ActorType: model.ActorUser, ActorID: ptr(actor), RefType: ptr("BATCH"), RefID: ptr(BatchID()),
 				Payload: model.JSON(`{"source":"seed"}`), OccurredAt: at(0, hours), RecordedAt: at(0, hours),
 			}
 		}
-		events = append(events, ev("commissioning", ptr("GENERATED"), ptr("COMMISSIONED"), nil, operator, 0))
+		events = append(events, ev("commissioning", ptr("GENERATED"), ptr("COMMISSIONED"), nil, central, operator, 0))
 		if su.ParentID != nil {
-			events = append(events, ev("packing", nil, nil, su.ParentID, operator, 1))
+			events = append(events, ev("packing", nil, nil, su.ParentID, central, operator, 1))
 		}
-		events = append(events, ev("receiving", ptr("COMMISSIONED"), ptr("IN_STOCK"), nil, warehouse, 2))
+		if su.ID == store.ID {
+			events = append(events, ev("receiving", ptr("COMMISSIONED"), ptr("IN_STOCK"), nil,
+				LocationID(StoreJakselCode), UserID("kepala.jaksel@mganik.test"), 26))
+			continue
+		}
+		events = append(events, ev("receiving", ptr("COMMISSIONED"), ptr("IN_STOCK"), nil, central, warehouse, 2))
 	}
 	return insert(s, events)
 }
@@ -502,13 +521,17 @@ type openingBalance struct {
 	refID         uuid.UUID
 }
 
-// Saldo awal. Saldo SKU1 di gudang pusat = 48 unit serial batch demo; saldo lain
-// adalah stok pembuka sebelum program serialisasi (tanpa serial per unit).
+// Saldo awal. Saldo SKU1 di gudang pusat = 48 unit serial palet demo, dan saldo
+// SKU1 di Toko Jakarta Selatan = 1 unit serial lepas (DemoStoreUnit); keduanya
+// dari batch demo. Saldo lain adalah stok pembuka sebelum program serialisasi
+// (tanpa serial per unit).
 var openingBalances = []openingBalance{
 	{CentralWHCode, SKU1, DemoUnitCount, "BATCH", BatchID()},
 	{CentralWHCode, SKU2, 100, "OPENING_BALANCE", ID("opening:" + CentralWHCode + ":" + SKU2)},
-	// Kasus 4: tepat satu unit terakhir di toko, diperebutkan POS offline dan order online.
-	{StoreJakselCode, SKU1, 1, "OPENING_BALANCE", ID("opening:" + StoreJakselCode + ":" + SKU1)},
+	// Kasus 4: tepat satu unit terakhir di toko, diperebutkan POS offline dan order
+	// online. ID dan idempotency key ledger sama dengan versi seed sebelum unit ini
+	// punya serial, jadi seed ulang di database lama tidak menambah saldo.
+	{StoreJakselCode, SKU1, 1, "BATCH", BatchID()},
 	{StoreJakselCode, SKU2, 12, "OPENING_BALANCE", ID("opening:" + StoreJakselCode + ":" + SKU2)},
 	{StoreBandungCode, SKU1, 6, "OPENING_BALANCE", ID("opening:" + StoreBandungCode + ":" + SKU1)},
 	{StoreBandungCode, SKU2, 8, "OPENING_BALANCE", ID("opening:" + StoreBandungCode + ":" + SKU2)},
