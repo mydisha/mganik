@@ -17,7 +17,9 @@ type OutboxEvent struct {
 	NextAttemptAt time.Time `gorm:"not null;default:now()"`
 	PublishedAt   *time.Time
 	LastError     *string
-	CreatedAt     time.Time `gorm:"not null"`
+	// DeadAt diisi saat event gagal OUTBOX_MAX_ATTEMPTS kali (dead-letter).
+	DeadAt    *time.Time
+	CreatedAt time.Time `gorm:"not null"`
 }
 
 func (OutboxEvent) TableName() string { return "outbox_events" }

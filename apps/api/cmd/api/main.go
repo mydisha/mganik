@@ -27,6 +27,7 @@ import (
 	"mganik/api/internal/database"
 	"mganik/api/internal/router"
 	"mganik/api/internal/seed"
+	"mganik/api/internal/worker"
 )
 
 func main() {
@@ -146,6 +147,14 @@ func serve(ctx context.Context, cfg config.Config, db *gorm.DB, log *slog.Logger
 	engine, err := router.New(router.Deps{Config: cfg, DB: db, Log: log})
 	if err != nil {
 		return err
+	}
+
+	// Sweeper reservasi + dispatcher outbox di proses yang sama (RUN_WORKER).
+	// Stop menunggu putaran yang sedang berjalan selesai sebelum DB ditutup.
+	if cfg.Inventory.RunWorker {
+		w := worker.New(worker.Deps{DB: db, Log: log, Config: cfg.Inventory})
+		w.Start(ctx)
+		defer w.Stop()
 	}
 
 	srv := &http.Server{

@@ -29,6 +29,9 @@ func TestLoad_ClaimPepper(t *testing.T) {
 			clearEnv(t)
 			t.Setenv("DATABASE_URL", "postgres://x")
 			t.Setenv("APP_ENV", tt.env)
+			// Secret webhook dan kunci PII valid supaya kasus ini hanya menguji pepper.
+			t.Setenv("WEBHOOK_SECRET", strings.Repeat("w", MinWebhookSecretBytes))
+			t.Setenv("PII_ENC_KEY", strings.Repeat("k", MinPIIEncKeyBytes))
 			if tt.setPepper {
 				t.Setenv("CLAIM_PEPPER", tt.pepper)
 			}
@@ -56,6 +59,7 @@ func TestLoad_ClaimPepper(t *testing.T) {
 // Kombinasi APP_ENV x nilai demo x SEED_DEMO_ALLOW_PRODUCTION.
 func TestLoad_DemoValuesInProduction(t *testing.T) {
 	realPepper := strings.Repeat("r", MinClaimPepperBytes)
+	realPII := strings.Repeat("s", MinPIIEncKeyBytes)
 	tests := []struct {
 		name     string
 		env      map[string]string
@@ -83,9 +87,44 @@ func TestLoad_DemoValuesInProduction(t *testing.T) {
 			wantErrs: []string{"CLAIM_PEPPER memakai nilai demo", "SEED_DEMO=true ditolak"},
 		},
 		{
-			name:     "production semua nilai demo dengan override diterima",
-			env:      map[string]string{"APP_ENV": EnvProduction, "CLAIM_PEPPER": DemoClaimPepper, "SEED_DEMO": "true", "SEED_DEMO_ALLOW_PRODUCTION": "true"},
+			name: "production semua nilai demo dengan override diterima",
+			env: map[string]string{"APP_ENV": EnvProduction, "CLAIM_PEPPER": DemoClaimPepper, "SEED_DEMO": "true", "SEED_DEMO_ALLOW_PRODUCTION": "true",
+				"WEBHOOK_SECRET": DemoWebhookSecret, "PII_ENC_KEY": DemoPIIEncKey, "OTP_MOCK_CODE": DemoOTPCode},
 			override: true,
+		},
+		{
+			name:     "production webhook secret demo tanpa override ditolak",
+			env:      map[string]string{"APP_ENV": EnvProduction, "CLAIM_PEPPER": realPepper, "WEBHOOK_SECRET": DemoWebhookSecret},
+			wantErrs: []string{"WEBHOOK_SECRET memakai nilai demo"},
+		},
+		{
+			name:     "production tanpa webhook secret ditolak",
+			env:      map[string]string{"APP_ENV": EnvProduction, "CLAIM_PEPPER": realPepper, "WEBHOOK_SECRET": ""},
+			wantErrs: []string{"WEBHOOK_SECRET wajib diisi"},
+		},
+		{
+			name:     "production webhook secret pendek ditolak walau override",
+			env:      map[string]string{"APP_ENV": EnvProduction, "CLAIM_PEPPER": realPepper, "WEBHOOK_SECRET": "pendek", "SEED_DEMO_ALLOW_PRODUCTION": "true"},
+			wantErrs: []string{"minimal 32 byte"},
+		},
+		{
+			name: "development tanpa webhook secret memakai demo",
+			env:  map[string]string{"APP_ENV": EnvDevelopment, "WEBHOOK_SECRET": ""},
+		},
+		{
+			name:     "production PII_ENC_KEY demo tanpa override ditolak",
+			env:      map[string]string{"APP_ENV": EnvProduction, "CLAIM_PEPPER": realPepper, "PII_ENC_KEY": DemoPIIEncKey},
+			wantErrs: []string{"PII_ENC_KEY memakai nilai demo"},
+		},
+		{
+			name:     "production OTP mock tanpa override ditolak (kode kustom juga)",
+			env:      map[string]string{"APP_ENV": EnvProduction, "CLAIM_PEPPER": realPepper, "PII_ENC_KEY": realPII, "OTP_MOCK_CODE": "135799"},
+			wantErrs: []string{"OTP_MOCK_CODE (OTP mock) ditolak"},
+		},
+		{
+			name:     "production tanpa PII_ENC_KEY ditolak walau ada override",
+			env:      map[string]string{"APP_ENV": EnvProduction, "CLAIM_PEPPER": realPepper, "SEED_DEMO_ALLOW_PRODUCTION": "true"},
+			wantErrs: []string{"PII_ENC_KEY wajib diisi minimal 32 byte"},
 		},
 		{
 			name:     "production override tidak melonggarkan panjang pepper",
@@ -94,7 +133,7 @@ func TestLoad_DemoValuesInProduction(t *testing.T) {
 		},
 		{
 			name: "production nilai sungguhan tanpa seed diterima",
-			env:  map[string]string{"APP_ENV": EnvProduction, "CLAIM_PEPPER": realPepper},
+			env:  map[string]string{"APP_ENV": EnvProduction, "CLAIM_PEPPER": realPepper, "PII_ENC_KEY": realPII},
 		},
 		{
 			name: "development nilai demo dan SEED_DEMO diterima tanpa override",
@@ -109,6 +148,8 @@ func TestLoad_DemoValuesInProduction(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			clearEnv(t)
 			t.Setenv("DATABASE_URL", "postgres://x")
+			// Default: secret webhook sungguhan; kasus webhook menimpanya lewat tt.env.
+			t.Setenv("WEBHOOK_SECRET", strings.Repeat("w", MinWebhookSecretBytes))
 			for k, v := range tt.env {
 				t.Setenv(k, v)
 			}
@@ -130,7 +171,9 @@ func TestLoad_DemoValuesInProduction(t *testing.T) {
 					t.Errorf("error tidak memuat %q:\n%v", want, err)
 				}
 			}
-			if strings.Contains(err.Error(), DemoClaimPepper) || strings.Contains(err.Error(), DefaultDemoPassword) {
+			if strings.Contains(err.Error(), DemoClaimPepper) || strings.Contains(err.Error(), DefaultDemoPassword) ||
+				strings.Contains(err.Error(), DemoWebhookSecret) ||
+				strings.Contains(err.Error(), DemoPIIEncKey) || strings.Contains(err.Error(), "135799") {
 				t.Fatalf("pesan error membocorkan nilai secret: %v", err)
 			}
 		})
@@ -148,8 +191,15 @@ func TestDemoDefaultsMatchRepoFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 		s := string(b)
-		for name, val := range map[string]string{"CLAIM_PEPPER": DemoClaimPepper, "SEED_DEMO_PASSWORD": DefaultDemoPassword} {
-			if !strings.Contains(s, val) {
+		for name, val := range map[string]string{
+			"CLAIM_PEPPER": DemoClaimPepper, "SEED_DEMO_PASSWORD": DefaultDemoPassword,
+			"PII_ENC_KEY": DemoPIIEncKey, "OTP_MOCK_CODE": DemoOTPCode,
+			"WEBHOOK_SECRET": DemoWebhookSecret,
+		} {
+			// Nilai harus menempel ke nama variabelnya (KEY=val, KEY ?= val,
+			// atau ${KEY:-val}), bukan sekadar muncul di mana saja di file.
+			if !strings.Contains(s, name+"="+val) && !strings.Contains(s, name+" ?= "+val) &&
+				!strings.Contains(s, "${"+name+":-"+val+"}") {
 				t.Errorf("%s: default %s tidak sama dengan konstanta Go", file, name)
 			}
 		}
