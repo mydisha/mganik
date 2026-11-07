@@ -42,8 +42,9 @@ what is not built yet is in [ARCHITECTURE.md §9](ARCHITECTURE.md#9-prototype-li
 5. **Loyalty (Case 2):** after that sale, open `/v/AT2JXMFN8BS93A4D` again: the unit is now
    genuine. Claim points with any Indonesian mobile number, OTP `246810`, and the unit's claim PIN
    `WNPFPPNWP7`.
-6. **API only:** the order, reservation and conflict flows behind Case 4 are easiest to inspect
-   through the tests below (`TestKasus4_*` in `internal/postest/kasus4_test.go`).
+6. **API:** every endpoint can be tried from the browser at http://localhost:8088/api/docs/ (see
+   [API docs](#api-docs-swagger-ui)). The order, reservation and conflict flows behind Case 4 are
+   easiest to inspect through the tests below (`TestKasus4_*` in `internal/postest/kasus4_test.go`).
 
 ### Running the three required tests
 
