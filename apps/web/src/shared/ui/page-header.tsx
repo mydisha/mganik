@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useDocumentTitle } from "@/shared/lib/use-document-title";
 
 interface PageHeaderProps {
   title: string;
@@ -8,6 +9,7 @@ interface PageHeaderProps {
 
 /** Satu h1 per halaman, satu kalimat konteks, dan aksi halaman di kanan. */
 export function PageHeader({ title, description, actions }: PageHeaderProps) {
+  useDocumentTitle(title);
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="space-y-1">
