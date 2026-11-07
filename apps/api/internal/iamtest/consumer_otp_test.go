@@ -163,8 +163,14 @@ func TestOTP_TooManyAttemptsPerCode(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		expectProblem(t, e.verifyOTP(testPhone, "111111"), http.StatusUnauthorized, "otp_invalid")
 	}
-	// Percobaan ke-5 salah → jatah habis.
-	expectProblem(t, e.verifyOTP(testPhone, "111111"), http.StatusTooManyRequests, "too_many_attempts")
+	// Percobaan ke-5 salah → jatah habis. Pesannya menyuruh minta kode baru,
+	// bukan menunggu (menunggu tidak membuka kode yang sama).
+	rec := e.verifyOTP(testPhone, "111111")
+	p := expectProblem(t, rec, http.StatusTooManyRequests, "too_many_attempts")
+	if !strings.Contains(p.Detail, "Minta kode baru") || strings.Contains(p.Detail, "Coba lagi dalam") ||
+		rec.Header().Get("Retry-After") != "60" {
+		t.Fatalf("detail %q retry %q", p.Detail, rec.Header().Get("Retry-After"))
+	}
 	// Kode benar setelah jatah habis tetap ditolak; harus minta kode baru.
 	expectProblem(t, e.verifyOTP(testPhone, config.DemoOTPCode), http.StatusTooManyRequests, "too_many_attempts")
 	if r := e.requestOTP(testPhone); r.Code != http.StatusAccepted {

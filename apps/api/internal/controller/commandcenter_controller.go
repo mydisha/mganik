@@ -102,7 +102,7 @@ func (q *queryReader) enum(name string, allowed []string) *string {
 			return &v
 		}
 	}
-	q.fail(name, "oneof", "harus salah satu dari: "+strings.Join(allowed, " "))
+	q.fail(name, "oneof", "harus salah satu dari: "+strings.Join(allowed, ", "))
 	return nil
 }
 
@@ -112,7 +112,7 @@ func (q *queryReader) pattern(name string, re *regexp.Regexp) *string {
 		return nil
 	}
 	if !re.MatchString(v) {
-		q.fail(name, "format", "format tidak valid")
+		q.fail(name, "format", "harus berupa kode dari huruf besar, angka, atau garis bawah")
 		return nil
 	}
 	return &v
@@ -261,7 +261,7 @@ func (h *CommandCenterController) UpdateAnomaly(c *gin.Context) {
 		if hasControlChars(*req.Note) {
 			apperror.Write(c, h.log, apperror.Validation(apperror.FieldError{
 				Field: "note", Code: "invalid_characters",
-				Message: "tidak boleh berisi karakter kontrol (kecuali baris baru dan tab)"}))
+				Message: "memuat karakter tak terlihat yang tidak diizinkan (baris baru dan tab boleh)"}))
 			return
 		}
 		if n := strings.TrimSpace(*req.Note); n != "" {

@@ -11,7 +11,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Liveness, menjawab selama proses hidup */
+        /** Liveness: returns 200 while the API process is running */
         get: operations["getLive"];
         put?: never;
         post?: never;
@@ -28,7 +28,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Readiness, database terhubung dan migrasi sudah diterapkan */
+        /** Readiness: database reachable and migrations applied */
         get: operations["getReady"];
         put?: never;
         post?: never;
@@ -48,8 +48,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Login staff dengan email + password
-         * @description Sukses memasang cookie `__Host-session` (HttpOnly, Secure, SameSite=Lax, idle 8 jam, absolut 12 jam) dan mengembalikan profil seperti /auth/me. Gagal memakai pesan generik yang sama untuk email tidak dikenal maupun password salah. Percobaan dibatasi per email (5) dan per IP (20) dalam 15 menit; jatah dipesan sebelum password diverifikasi, jadi request paralel tidak bisa melewatinya. Login sukses tidak memakan jatah IP.
+         * Staff login with email and password
+         * @description On success, sets the `__Host-session` cookie (HttpOnly, Secure, SameSite=Lax, 8 h idle, 12 h absolute) and returns the same profile as /auth/me. Failures use one generic message for both an unknown email and a wrong password. Attempts are limited per email (5) and per IP (20) within 15 minutes; the quota is reserved before the password is verified, so parallel requests cannot bypass it. A successful login does not consume IP quota.
          */
         post: operations["login"];
         delete?: never;
@@ -68,8 +68,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Mencabut sesi staff dan menghapus cookie
-         * @description Idempotent; selalu 204 walau sesi sudah kedaluwarsa atau tidak ada.
+         * Revoke the staff session and clear the cookie
+         * @description Idempotent; always 204, even when the session has expired or does not exist.
          */
         post: operations["logout"];
         delete?: never;
@@ -85,7 +85,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Profil staff yang sedang login, role, permission, dan scope lokasi */
+        /** Current staff profile with roles, permissions, and location scope */
         get: operations["getMe"];
         put?: never;
         post?: never;
@@ -105,8 +105,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Minta kode OTP login konsumen (mock)
-         * @description Nomor dinormalkan ke E.164 Indonesia (+628...). Prototype memakai kode OTP tetap (OTP_MOCK_CODE) yang tidak pernah dikembalikan di respons; dimatikan (503 otp_unavailable) di production tanpa izin demo. Dibatasi 5 permintaan per nomor dan 20 per IP dalam 15 menit.
+         * Request a consumer login OTP (mock)
+         * @description The number is normalized to Indonesian E.164 (+628...). The prototype uses a fixed OTP (OTP_MOCK_CODE) that is never returned in the response; it is disabled (503 otp_unavailable) in production without the demo override. Limited to 5 requests per number and 20 per IP within 15 minutes.
          */
         post: operations["requestConsumerOtp"];
         delete?: never;
@@ -125,8 +125,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Verifikasi OTP dan buat sesi konsumen
-         * @description Sukses memasang cookie `__Host-consumer` (idle 24 jam, absolut 7 hari). Maksimal 5 percobaan per kode; setelah itu minta kode baru. Cookie konsumen lama (bila ada) dicabut dan diganti.
+         * Verify the OTP and create a consumer session
+         * @description On success, sets the `__Host-consumer` cookie (24 h idle, 7 days absolute). At most 5 attempts per code; after that the API returns 429 too_many_attempts and the consumer must request a new code. An existing consumer cookie, if any, is revoked and replaced.
          */
         post: operations["verifyConsumerOtp"];
         delete?: never;
@@ -143,8 +143,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Konsumen yang sedang login (nomor disamarkan)
-         * @description Butuh cookie `__Host-consumer` dari /public/otp/verify.
+         * Current consumer (masked phone number)
+         * @description Requires the `__Host-consumer` cookie from /public/otp/verify.
          */
         get: operations["getConsumerMe"];
         put?: never;
@@ -165,8 +165,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Mencabut sesi konsumen dan menghapus cookie
-         * @description Idempotent; memakai cookie `__Host-consumer` bila ada.
+         * Revoke the consumer session and clear the cookie
+         * @description Idempotent; uses the `__Host-consumer` cookie when present.
          */
         post: operations["logoutConsumer"];
         delete?: never;
@@ -185,8 +185,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Mint kode serial acak 80-bit (dan PIN klaim untuk UNIT) untuk satu job cetak
-         * @description Permission code.mint. Kode dan PIN plaintext hanya dikembalikan sekali di respons ini sebagai bahan file cetak; DB hanya menyimpan HMAC PIN.
+         * Mint random 80-bit serial codes (plus claim PINs for UNIT) for one print job
+         * @description Permission code.mint. Plaintext codes and PINs are returned only once, in this response, as input for the print file; the database stores only the PIN HMAC.
          */
         post: operations["mintCodes"];
         delete?: never;
@@ -204,7 +204,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Ikat label GENERATED ke batch produksi (→ COMMISSIONED) */
+        /** Bind GENERATED labels to a production batch (→ COMMISSIONED) */
         post: operations["commissionSerials"];
         delete?: never;
         options?: never;
@@ -221,7 +221,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Terima hasil produksi (COMMISSIONED → IN_STOCK) ke lokasi sendiri, beserta turunannya */
+        /** Receive production output (COMMISSIONED → IN_STOCK) into an own location, including descendants */
         post: operations["receiveSerials"];
         delete?: never;
         options?: never;
@@ -239,8 +239,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Masukkan unit ke karton atau karton ke palet
-         * @description Validasi rank level, spesifikasi kemasan, kapasitas, produk, aturan campuran batch, anak belum punya induk, tanpa siklus. Anak yang sudah ada di induk yang sama dilewati (aman di-retry).
+         * Pack units into a carton or cartons into a pallet
+         * @description Validates level rank, packaging spec, capacity, product, the mixed-batch rule, that children have no parent yet, and that there is no cycle. Children already in the same parent are skipped (safe to retry).
          */
         post: operations["aggregateSerials"];
         delete?: never;
@@ -258,7 +258,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Bongkar kemasan (keluarkan semua anak langsung) */
+        /** Unpack a container (remove all direct children) */
         post: operations["unpackSerial"];
         delete?: never;
         options?: never;
@@ -274,8 +274,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Genealogi serial (leluhur, turunan, event, shipment, custodian, scan)
-         * @description Shipment diambil dari riwayat event (unit dan karton/palet yang pernah membungkusnya), jadi tetap terlihat setelah kemasan dibongkar.
+         * Serial genealogy (ancestors, descendants, events, shipments, custodian, scans)
+         * @description Shipments come from the event history (the unit and every carton or pallet that ever contained it), so they stay visible after unpacking.
          */
         get: operations["traceSerial"];
         put?: never;
@@ -295,7 +295,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Recall batch; unit di rantai pasok → QUARANTINED massal (idempotent) */
+        /** Recall a batch; units in the supply chain move to QUARANTINED in bulk (idempotent) */
         post: operations["recallBatch"];
         delete?: never;
         options?: never;
@@ -312,7 +312,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Kirim palet/karton/unit; status dan custodian seluruh turunan berpindah dalam satu statement */
+        /** Ship pallets, cartons, or units; status and custodian of every descendant move in one statement */
         post: operations["createSerialShipment"];
         delete?: never;
         options?: never;
@@ -329,7 +329,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Terima shipment (→ AT_PARTNER di lokasi mitra, IN_STOCK di lokasi sendiri; idempotent) */
+        /** Receive a shipment (→ AT_PARTNER at a partner location, IN_STOCK at an own location; idempotent) */
         post: operations["receiveSerialShipment"];
         delete?: never;
         options?: never;
@@ -347,8 +347,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Review klaim poin (APPROVE/REJECT untuk PENDING, REVERSE untuk APPROVED)
-         * @description REJECT dan REVERSE (clawback, note wajib) membalik poin lewat ledger REVERSE yang idempotent, membebaskan unit untuk pembeli asli, dan mengembalikan serial ke status asalnya (SOLD/AT_PARTNER). Keputusan sama yang dikirim ulang idempotent; keputusan lain untuk klaim yang sudah diputuskan 409 claim_already_decided.
+         * Review a points claim (APPROVE/REJECT for PENDING, REVERSE for APPROVED)
+         * @description REJECT and REVERSE (clawback, note required) reverse the points through an idempotent REVERSE ledger entry, free the unit for the real buyer, and return the serial to its previous status (SOLD or AT_PARTNER). Resending the same decision is idempotent; a different decision on an already decided claim returns 409 claim_already_decided.
          */
         post: operations["reviewLoyaltyClaim"];
         delete?: never;
@@ -367,8 +367,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Verifikasi keaslian produk (publik, tanpa login)
-         * @description Rate limit per IP (IPv4 per alamat, IPv6 per /64; 429 + Retry-After). Server memasang cookie anonim mg_vid untuk fingerprint scan. Respons tidak memuat status internal serial; kode berformat salah langsung NOT_FOUND (tetap direkam untuk hotspot pemalsuan).
+         * Verify product authenticity (public, no login)
+         * @description Rate limited per IP (IPv4 per address, IPv6 per /64; 429 with Retry-After). The server sets an anonymous mg_vid cookie to fingerprint scans. The response never includes the internal serial status; a malformed code returns NOT_FOUND right away (still recorded for counterfeit hotspots).
          */
         post: operations["verifySerial"];
         delete?: never;
@@ -387,8 +387,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Klaim poin dengan PIN di dalam kemasan (sesi konsumen)
-         * @description 423 claim_locked setelah 5 PIN salah per unit; 409 already_claimed atau claim_not_allowed (unit belum terjual); 403 claim_previously_rejected kalau klaim akun ini untuk unit itu pernah ditolak/dibalik; 422 duplicate_code tidak berlaku (satu kode). Rate limit per IP dan per akun (429). Klaim ulang oleh akun yang sama mengembalikan klaim lama dengan status 200 (replayed=true).
+         * Claim points with the PIN inside the package (consumer session)
+         * @description 423 claim_locked after 5 wrong PINs per unit; 409 already_claimed or claim_not_allowed (unit not sold yet); 403 claim_previously_rejected when this account's claim for the unit was rejected or reversed before; 422 duplicate_code does not apply (single code). Rate limited per IP and per account (429). A repeat claim by the same account returns the existing claim with status 200 (replayed=true).
          */
         post: operations["claimLoyaltyPoints"];
         delete?: never;
@@ -404,7 +404,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Saldo poin konsumen (tersedia vs masih tertahan masa tunggu/review) */
+        /** Consumer points balance (available vs held for the waiting period or review) */
         get: operations["getLoyaltyBalance"];
         put?: never;
         post?: never;
@@ -422,8 +422,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Saldo stok per (lokasi, produk) dengan ATP online
-         * @description Pagination keyset (location_id, product_id) lewat cursor opaque. Principal ber-scope SELECTED hanya melihat lokasinya. online_atp = available − online_buffer_qty, dan 0 kalau POS lokasi OFFLINE. Permission inventory.read.
+         * Stock balance per (location, product) with online ATP
+         * @description Keyset pagination on (location_id, product_id) through an opaque cursor. A principal with SELECTED scope only sees its own locations. online_atp = available − online_buffer_qty, and 0 when the location's POS is OFFLINE. Permission inventory.read.
          */
         get: operations["listInventoryBalances"];
         put?: never;
@@ -444,8 +444,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Stock opname (ADJUST_COUNT ±) dengan alasan wajib, diaudit
-         * @description Idempotency-Key yang sama dengan isi sama = 200 duplicate (tanpa mutasi baru); isi berbeda = 422 idempotency_key_reused. Mengurangi melebihi available = 409 insufficient_stock. Permission inventory.adjust.
+         * Stock count adjustment (ADJUST_COUNT ±) with a required reason, audited
+         * @description Same Idempotency-Key with the same body = 200 duplicate (no new movement); a different body = 422 idempotency_key_reused. Reducing more than available = 409 insufficient_stock. Permission inventory.adjust.
          */
         post: operations["createInventoryAdjustment"];
         delete?: never;
@@ -464,8 +464,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Pindah stok ke karantina (IN) atau rilis (OUT), diaudit
-         * @description Permission inventory.quarantine. Semantik Idempotency-Key sama dengan adjustment.
+         * Move stock into quarantine (IN) or release it (OUT), audited
+         * @description Permission inventory.quarantine. Idempotency-Key semantics match adjustments.
          */
         post: operations["moveInventoryQuarantine"];
         delete?: never;
@@ -484,8 +484,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Buat order D2C dan pesan stok (PENDING_PAYMENT)
-         * @description Harga dari price list channel. Seluruh line dipesan di SATU lokasi (gudang pusat dulu, lalu lokasi lain yang online_fulfillment_enabled), all-or-nothing, dengan batas bayar RESERVATION_TTL. Idempotency-Key wajib: replay = respons identik + header Idempotent-Replayed: true, isi berbeda = 422 idempotency_key_reused, masih diproses = 409 idempotency_in_progress. Stok tidak cukup = 409 out_of_stock dengan errors[] per line (field lines[i].qty, code insufficient_stock atau not_at_single_location). Permission order.create.
+         * Create a D2C order and reserve stock (PENDING_PAYMENT)
+         * @description Prices come from the channel price list. All lines are reserved at one location (central warehouse first, then other locations with online_fulfillment_enabled), all-or-nothing, with a RESERVATION_TTL payment deadline. Idempotency-Key is required: replay = identical response plus header Idempotent-Replayed: true, different body = 422 idempotency_key_reused, still processing = 409 idempotency_in_progress. Insufficient stock = 409 out_of_stock with errors[] per line (field lines[i].qty, code insufficient_stock or not_at_single_location). Permission order.create.
          */
         post: operations["createOrder"];
         delete?: never;
@@ -502,8 +502,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Order lengkap (line, reservasi, riwayat status, pembayaran)
-         * @description Permission order.read; principal SELECTED hanya order dari lokasinya.
+         * Full order (lines, reservations, status history, payments)
+         * @description Permission order.read; a SELECTED principal only sees orders from its locations.
          */
         get: operations["getOrder"];
         put?: never;
@@ -524,8 +524,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Batalkan order dan lepas reservasinya
-         * @description Dari PENDING_PAYMENT, PAID, atau NEEDS_ACTION. Order yang sudah dibayar ditandai metadata.refund_required. Membatalkan order CANCELLED = 200 apa adanya. Permission order.cancel.
+         * Cancel an order and release its reservations
+         * @description Allowed from PENDING_PAYMENT, PAID, or NEEDS_ACTION. A paid order is flagged with metadata.refund_required. Cancelling a CANCELLED order returns 200 unchanged. Permission order.cancel.
          */
         post: operations["cancelOrder"];
         delete?: never;
@@ -544,8 +544,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Penuhi order PAID (COMMIT_SALE, PAID → FULFILLING → SHIPPED)
-         * @description Body opsional: serial unit per line dicatat di order_line_serials (satu unit hanya terjual sekali = 409 serial_already_sold). Order SHIPPED = 200 apa adanya. Permission order.fulfill + semua lokasi reservasi di scope.
+         * Fulfill a PAID order (COMMIT_SALE, PAID → FULFILLING → SHIPPED)
+         * @description Optional body: unit serials per line are recorded in order_line_serials (a unit can be sold only once, otherwise 409 serial_already_sold). A SHIPPED order returns 200 unchanged. Requires permission order.fulfill and every reservation location in scope.
          */
         post: operations["fulfillOrder"];
         delete?: never;
@@ -564,8 +564,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Webhook pembayaran mock (signature HMAC, idempotent per provider_ref)
-         * @description Nominal dan mata uang harus sama dengan total order. PENDING_PAYMENT → PAID. Bayar telat (EXPIRED): stok dipesan ulang → PAID, atau NEEDS_ACTION + refund kalau stok habis. Kiriman ulang = 200 ALREADY_PROCESSED.
+         * Mock payment webhook (HMAC signature, idempotent per provider_ref)
+         * @description Amount and currency must equal the order total. PENDING_PAYMENT → PAID. Late payment (EXPIRED): stock is reserved again → PAID, or NEEDS_ACTION plus refund when stock is gone. A resend returns 200 ALREADY_PROCESSED.
          */
         post: operations["paymentWebhookMock"];
         delete?: never;
@@ -584,8 +584,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Impor order marketplace yang sudah dibayar (signature HMAC)
-         * @description Dedupe per (channel_code, external_ref): impor ulang dengan isi sama = 200 duplicate dengan order yang sama; isi berbeda = 409 external_ref_conflict. Order langsung PAID; stok tidak cukup → order tetap dibuat lalu NEEDS_ACTION (tidak ditolak).
+         * Import a paid marketplace order (HMAC signature)
+         * @description Deduplicated per (channel_code, external_ref): re-importing the same body = 200 duplicate with the same order; a different body = 409 external_ref_conflict. The order starts as PAID; with insufficient stock the order is still created and moves to NEEDS_ACTION (not rejected).
          */
         post: operations["importMarketplaceOrder"];
         delete?: never;
@@ -602,14 +602,14 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Daftar device POS di lokasi dalam scope pos.device.manage
-         * @description Pagination keyset (created_at, id) terbaru dulu. Tidak pernah memuat token atau signing key.
+         * List POS devices at locations within pos.device.manage scope
+         * @description Keyset pagination on (created_at, id), newest first. Never includes the token or signing key.
          */
         get: operations["listPosDevices"];
         put?: never;
         /**
-         * Provisioning device POS (token + signing key, hanya sekali)
-         * @description Permission pos.device.manage di lokasi tujuan (scope per permission). Lokasi wajib toko sendiri (OWN_STORE) yang aktif, selain itu 422 location_not_store / location_not_found. Token bearer dan signing key acak 256 bit HANYA dikembalikan di respons ini (Cache-Control: no-store); server menyimpan SHA-256 token dan signing key terenkripsi AES-256-GCM (subkey HKDF dari PII_ENC_KEY, AAD = id device). Tidak ada replay Idempotency-Key (replay berarti menyimpan token polos): retry yang membuat device ganda diselesaikan dengan mencabut device lebih. Toko NOT_TRACKED menjadi OFFLINE sampai heartbeat pertama. Diaudit.
+         * Provision a POS device (token and signing key, returned once)
+         * @description Permission pos.device.manage at the target location (scope per permission). The location must be an active own store (OWN_STORE), otherwise 422 location_not_store or location_not_found. The random 256-bit bearer token and signing key are returned ONLY in this response (Cache-Control: no-store); the server stores the token's SHA-256 and the signing key encrypted with AES-256-GCM (HKDF subkey of PII_ENC_KEY, AAD = device id). There is no Idempotency-Key replay (a replay would mean storing the plaintext token): a retry that creates a duplicate device is resolved by revoking the extra device. A NOT_TRACKED store becomes OFFLINE until its first heartbeat. Audited.
          */
         post: operations["provisionPosDevice"];
         delete?: never;
@@ -628,8 +628,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Cabut device POS (token langsung ditolak 401)
-         * @description Permission pos.device.manage di lokasi device (di luar scope 403, tidak ada 404). Mencabut device yang sudah dicabut mengembalikan keadaannya (idempotent, tanpa audit kedua). Body opsional. Batasan: penjualan offline yang belum tersinkron dari device yang sudah dicabut tidak bisa masuk lewat /pos/sync (token 401); pemulihannya manual (ekspor outbox/struk, dicatat ops setelah verifikasi). Pastikan heartbeat terakhir device melaporkan pending_count 0 sebelum mencabut. Toko yang tidak lagi punya device ACTIVE kembali NOT_TRACKED.
+         * Revoke a POS device (its token is rejected with 401 immediately)
+         * @description Permission pos.device.manage at the device's location (out of scope = 403, missing = 404). Revoking an already revoked device returns its current state (idempotent, no second audit entry). Body optional. Limitation: unsynced offline sales from a revoked device cannot come in through /pos/sync (token 401); recovery is manual (export the outbox or receipts, recorded by ops after verification). Make sure the device's last heartbeat reported pending_count 0 before revoking. A store with no ACTIVE device left returns to NOT_TRACKED.
          */
         post: operations["revokePosDevice"];
         delete?: never;
@@ -646,8 +646,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Data referensi untuk operasi offline (device)
-         * @description Satu snapshot konsisten (REPEATABLE READ): katalog produk aktif, price list POS yang berlaku + version (bawa sebagai price_list_version di transaksi), snapshot stok lokasi, halaman pertama serial UNIT IN_STOCK di lokasi (2.000 per halaman, lanjutkan dengan /pos/bootstrap/serials?cursor=), kasir yang boleh login (user aktif ber-scope pos.sync di lokasi ini dan sudah punya PIN) beserta pos_pin_hash argon2id untuk login lokal, server_time, dan batas offline. Trade-off: hash PIN di device bisa di-brute force offline kalau device dicuri; dampaknya terbatas karena server tetap memeriksa token device (bisa dicabut) dan cashier_id setiap transaksi. Cache-Control: no-store.
+         * Reference data for offline operation (device)
+         * @description One consistent snapshot (REPEATABLE READ): active product catalog, the current POS price list and its version (send it as price_list_version in transactions), the location's stock snapshot, the first page of UNIT IN_STOCK serials at the location (2,000 per page, continue with /pos/bootstrap/serials?cursor=), cashiers allowed to log in (active users with pos.sync scope at this location who have a PIN) with their argon2id pos_pin_hash for local login, server_time, and offline limits. Trade-off: PIN hashes on the device can be brute-forced offline if the device is stolen; the impact is limited because the server still checks the (revocable) device token and the cashier_id of every transaction. Cache-Control: no-store.
          */
         get: operations["getPosBootstrap"];
         put?: never;
@@ -665,7 +665,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Halaman berikutnya serial UNIT IN_STOCK di lokasi device */
+        /** Next page of UNIT IN_STOCK serials at the device's location */
         get: operations["listPosBootstrapSerials"];
         put?: never;
         post?: never;
@@ -685,8 +685,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Heartbeat device (disarankan setiap heartbeat_interval_seconds)
-         * @description Selalu memperbarui pos_devices.last_seen_at. Toko baru dijadikan ONLINE (locations.sync_state + last_heartbeat_at, monoton) kalau pending_count = 0 DAN server tidak melihat gap seq device ini; selain itu online_blocked_reason berisi pending_count_missing, pending_outbox, atau missing_seqs dan toko tidak diperpanjang ONLINE. Alasannya: selama penjualan offline belum tersinkron, stok toko di server belum benar, jadi ATP online toko harus tetap 0. Urutan klien setelah internet kembali: kirim outbox (/pos/sync) sampai habis, LALU heartbeat dengan pending_count 0. Worker menandai lokasi OFFLINE kalau tidak ada heartbeat "bersih" lebih dari heartbeat_timeout_seconds (default 120).
+         * Device heartbeat (recommended every heartbeat_interval_seconds)
+         * @description Always updates pos_devices.last_seen_at. The store only becomes ONLINE (locations.sync_state and last_heartbeat_at, monotonic) when pending_count = 0 and the server sees no seq gap for this device; otherwise online_blocked_reason is pending_count_missing, pending_outbox, or missing_seqs and the store's ONLINE state is not extended. Reason: while offline sales are unsynced, the server's stock for the store is wrong, so the store's online ATP must stay 0. Client order after connectivity returns: drain the outbox (/pos/sync), then send a heartbeat with pending_count 0. A worker marks the location OFFLINE when there has been no "clean" heartbeat for longer than heartbeat_timeout_seconds (default 120).
          */
         post: operations["postPosHeartbeat"];
         delete?: never;
@@ -705,43 +705,45 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Rekonsiliasi transaksi offline POS (idempotent, per transaksi)
-         * @description Batch maksimal sync_max_batch (500) transaksi, body maksimal
-         *     sync_max_body_bytes (5 MiB). Transaksi diproses urut device_seq,
-         *     masing-masing di transaksi database sendiri; satu transaksi gagal tidak
-         *     menghentikan yang lain. Penjualan adalah fakta: TIDAK pernah ditolak
-         *     karena stok atau serial ("fakta menang atas janji").
+         * Reconcile offline POS transactions (idempotent per transaction)
+         * @description At most sync_max_batch (500) transactions per batch and
+         *     sync_max_body_bytes (5 MiB) per body. Transactions are processed in
+         *     device_seq order, each in its own database transaction; one failure does
+         *     not stop the others. A sale is a fact: it is NEVER rejected because of
+         *     stock or serials ("facts beat promises").
          *
-         *     **Identitas:** client_txn_id (UUID, disarankan v7) dan device_seq
-         *     (bilangan bulat 1..2^53-1, monoton per device, diambil dalam transaksi
-         *     IndexedDB). Item yang identitasnya tidak bisa dibaca dijawab REJECTED
-         *     invalid_payload TANPA disimpan (cocokkan lewat `results[].index`);
-         *     item lain tetap diproses. 400/422 untuk seluruh batch hanya kalau
-         *     struktur batch rusak atau lebih dari sync_max_batch. id/seq yang sama
-         *     dua kali di satu batch diperlakukan seperti pengiriman ulang.
+         *     **Identity:** client_txn_id (UUID, v7 recommended) and device_seq
+         *     (integer 1..2^53-1, monotonic per device, taken inside an IndexedDB
+         *     transaction). An item whose identity cannot be read is answered REJECTED
+         *     invalid_payload without being stored (match it through
+         *     `results[].index`); other items are still processed. 400/422 for the
+         *     whole batch only when the batch structure is broken or it exceeds
+         *     sync_max_batch. The same id/seq twice in one batch is treated as a
+         *     resend.
          *
-         *     **Signature dicek sebelum apa pun disimpan.** Transaksi bersignature
-         *     salah (atau yang tidak bisa dikanonisasi) TIDAK disimpan dan tidak
-         *     menempati client_txn_id maupun device_seq: kirim ulang versi yang
-         *     ditandatangani benar tetap diterima. Signature salah dicatat sebagai
-         *     anomali POS_PAYLOAD_MISMATCH (satu per device per hari, hit_count).
+         *     **The signature is checked before anything is stored.** A transaction
+         *     with a wrong signature (or one that cannot be canonicalized) is not
+         *     stored and does not occupy its client_txn_id or device_seq: resending a
+         *     correctly signed version is still accepted. A wrong signature is
+         *     recorded as a POS_PAYLOAD_MISMATCH anomaly (one per device per day,
+         *     hit_count).
          *
-         *     **Kanonisasi untuk signature dan payload_hash** (subset RFC 8785/JCS):
-         *     1. Ambil objek transaksi apa adanya, buang member tingkat atas
-         *        `signature`. Member lain (termasuk yang tidak dikenal) ikut
-         *        ditandatangani.
-         *     2. Urutkan key objek secara rekursif menurut unit kode UTF-16 (sama
-         *        dengan `Array.prototype.sort()` bawaan JS); key ganda ditolak.
-         *     3. Serialisasi tanpa spasi; string di-escape persis seperti
-         *        `JSON.stringify` (\" \\ \b \f \n \r \t, kontrol lain \u00xx huruf
-         *        kecil, karakter lain termasuk non-ASCII ditulis apa adanya dalam
-         *        UTF-8); urutan array dipertahankan.
-         *     4. Angka hanya bilangan bulat |n| <= 2^53-1 (uang dalam rupiah utuh),
-         *        tanpa pecahan/eksponen. Surrogate UTF-16 tunggal ditulis \udxxx
-         *        seperti JSON.stringify (signature tetap terverifikasi), tetapi
-         *        transaksinya REJECTED invalid_payload (disimpan, tanpa anomali).
+         *     **Canonicalization for signature and payload_hash** (subset of RFC
+         *     8785/JCS):
+         *     1. Take the transaction object as is and drop the top-level `signature`
+         *        member. Every other member (including unknown ones) is signed.
+         *     2. Sort object keys recursively by UTF-16 code unit (same as the
+         *        built-in JS `Array.prototype.sort()`); duplicate keys are rejected.
+         *     3. Serialize without whitespace; escape strings exactly like
+         *        `JSON.stringify` (\" \\ \b \f \n \r \t, other control characters as
+         *        lowercase \u00xx, everything else including non-ASCII written as is
+         *        in UTF-8); array order is preserved.
+         *     4. Numbers are integers only, |n| <= 2^53-1 (money in whole rupiah), no
+         *        fractions or exponents. A lone UTF-16 surrogate is written as \udxxx
+         *        like JSON.stringify (the signature still verifies), but the
+         *        transaction is REJECTED invalid_payload (stored, no anomaly).
          *
-         *     Referensi JS:
+         *     JS reference:
          *     ```js
          *     const canon = (v) => Array.isArray(v) ? '[' + v.map(canon).join(',') + ']'
          *       : v !== null && typeof v === 'object'
@@ -753,57 +755,61 @@ export interface paths {
          *       { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
          *     txn.signature = bytesToHex(new Uint8Array(await crypto.subtle.sign('HMAC', key, bytes)));
          *     ```
-         *     signature = hex huruf kecil HMAC-SHA256(signing_key, kanonis);
-         *     payload_hash server = SHA-256(kanonis).
+         *     signature = lowercase hex HMAC-SHA256(signing_key, canonical);
+         *     server payload_hash = SHA-256(canonical).
          *
-         *     **Status per transaksi** (`results[].status`):
-         *     - ACCEPTED: dicatat (stok, serial, order POS COMPLETED, pembayaran).
-         *     - ACCEPTED_WITH_CONFLICT: dicatat, plus `detail.conflicts`
-         *       (OFFLINE_SALE_PREEMPT: reservasi online dikalahkan;
-         *       STOCK_DISCREPANCY: stok fisik tercatat kurang; SERIAL_DOUBLE_SALE:
-         *       serial terdaftar tapi sudah terjual/salah lokasi/bukan unit/produk
-         *       lain, tidak diubah; SERIAL_UNREGISTERED: serial tidak terdaftar,
-         *       anomali POS_UNREGISTERED_SERIAL; PAYMENT_REF_DUPLICATE: approval_ref
-         *       sudah dipakai transaksi lain, pembayaran dicatat PENDING).
-         *     - REJECTED: tidak ada efek stok/order; `detail.reason`:
-         *       - disimpan (kirim ulang = DUPLICATE, seq terisi): invalid_payload
-         *         (bersignature sah), cashier_not_allowed (kasir tidak dikenal atau
-         *         tanpa role pos.sync di lokasi), unknown_product, validation_failed,
+         *     **Per-transaction status** (`results[].status`):
+         *     - ACCEPTED: recorded (stock, serials, COMPLETED POS order, payments).
+         *     - ACCEPTED_WITH_CONFLICT: recorded, plus `detail.conflicts`
+         *       (OFFLINE_SALE_PREEMPT: an online reservation lost to the sale;
+         *       STOCK_DISCREPANCY: recorded physical stock was short;
+         *       SERIAL_DOUBLE_SALE: serial is registered but already sold, at another
+         *       location, not a unit, or a different product, and is left unchanged;
+         *       SERIAL_UNREGISTERED: serial is not registered, anomaly
+         *       POS_UNREGISTERED_SERIAL; PAYMENT_REF_DUPLICATE: approval_ref already
+         *       used by another transaction, payment recorded as PENDING).
+         *     - REJECTED: no stock or order effect; `detail.reason`:
+         *       - stored (resend = DUPLICATE, seq filled): invalid_payload (validly
+         *         signed), cashier_not_allowed (unknown cashier or no pos.sync role at
+         *         the location), unknown_product, validation_failed,
          *         invalid_characters, total_mismatch, payment_insufficient;
-         *       - idempotency_key_reused (client_txn_id sudah dipakai dengan isi
-         *         berbeda; transaksi asli tetap berlaku; seq baru diisi baris
-         *         tombstone REJECTED supaya ack maju; anomali POS_PAYLOAD_MISMATCH);
-         *       - TIDAK disimpan: invalid_signature, invalid_payload yang tidak
-         *         bisa diverifikasi (identitas rusak / tidak bisa dikanonisasi),
-         *         device_seq_reused (seq sudah dipakai transaksi lain; anomali).
-         *     - DUPLICATE: sudah pernah diproses; `result` dan `detail` adalah hasil
-         *       asli, identik byte per byte dengan respons pertama.
-         *     - RETRY: gagal sementara (stock_contended / temporary_failure), tidak
-         *       disimpan; kirim ulang nanti.
-         *     Hapus dari outbox untuk ACCEPTED, ACCEPTED_WITH_CONFLICT, DUPLICATE;
-         *     pindahkan REJECTED ke daftar "perlu perhatian"; pertahankan RETRY.
+         *       - idempotency_key_reused (client_txn_id already used with a different
+         *         body; the original transaction stands; the new seq gets a REJECTED
+         *         tombstone row so ack can advance; anomaly POS_PAYLOAD_MISMATCH);
+         *       - not stored: invalid_signature, invalid_payload that cannot be
+         *         verified (broken identity or not canonicalizable),
+         *         device_seq_reused (seq already used by another transaction;
+         *         anomaly).
+         *     - DUPLICATE: already processed; `result` and `detail` are the original
+         *       result, byte-identical to the first response.
+         *     - RETRY: transient failure (stock_contended or temporary_failure), not
+         *       stored; resend later.
+         *     Remove from the outbox for ACCEPTED, ACCEPTED_WITH_CONFLICT, and
+         *     DUPLICATE; move REJECTED to a "needs attention" list; keep RETRY.
+         *     `detail.message` and `detail.errors[].message` are Indonesian text that
+         *     can be shown to the cashier.
          *
-         *     **Flag** (`detail.flags`, transaksi tetap ACCEPTED): PRICE_STALE
-         *     (price_list_version bukan versi yang berlaku saat transaksi),
-         *     OFFLINE_TOO_LONG (terjadi > offline_limit_seconds sebelum diterima),
-         *     CLOCK_SKEW (|server_time − client_time| > toleransi), FUTURE_TIMESTAMP,
-         *     PRICE_MISMATCH (unit_price beda dari price list yang berlaku pada
-         *     waktu transaksi), HIGH_DISCOUNT (diskon line > high_discount_percent),
-         *     OFFLINE_VALUE_LIMIT (total > offline_value_limit; + anomali),
-         *     ZERO_TOTAL, CASHIER_INACTIVE (kasir punya role di lokasi tetapi user
-         *     sudah nonaktif saat sync; penjualan tetap fakta; + anomali),
-         *     SERIAL_INVALID_FORMAT (kode yang dipindai bukan format serial; daftar
-         *     di `detail.invalid_serials`, tanpa anomali). Kode serial dinormalisasi
-         *     seperti verifikasi konsumen (huruf besar, tanpa spasi/strip, I/L→1,
-         *     O→0). occurred_at device disimpan apa adanya; ledger/order memakai
-         *     occurred_at + clock_skew_ms (dibatasi <= waktu terima).
+         *     **Flags** (`detail.flags`, the transaction stays ACCEPTED): PRICE_STALE
+         *     (price_list_version is not the version in effect at transaction time),
+         *     OFFLINE_TOO_LONG (happened more than offline_limit_seconds before it was
+         *     received), CLOCK_SKEW (|server_time − client_time| > tolerance),
+         *     FUTURE_TIMESTAMP, PRICE_MISMATCH (unit_price differs from the price list
+         *     in effect at transaction time), HIGH_DISCOUNT (line discount >
+         *     high_discount_percent), OFFLINE_VALUE_LIMIT (total >
+         *     offline_value_limit; plus anomaly), ZERO_TOTAL, CASHIER_INACTIVE
+         *     (cashier has a role at the location but the user was deactivated by
+         *     sync time; the sale is still a fact; plus anomaly),
+         *     SERIAL_INVALID_FORMAT (scanned code is not in serial format; listed in
+         *     `detail.invalid_serials`, no anomaly). Serial codes are normalized like
+         *     consumer verification (uppercase, no spaces or hyphens, I/L→1, O→0).
+         *     The device's occurred_at is stored as is; ledger and order use
+         *     occurred_at + clock_skew_ms (capped at the receive time).
          *
-         *     **ack_up_to_seq** = N terbesar sehingga seq 1..N device ini sudah
-         *     tersimpan (hasil apa pun yang disimpan, termasuk REJECTED dan
-         *     tombstone). missing_seqs = seq yang
-         *     belum diterima antara ack_up_to_seq+1 dan seq tertinggi yang tersimpan
-         *     (maks. 500; missing_seqs_truncated kalau terpotong). Batch kosong boleh
-         *     dipakai untuk menanyakan ack.
+         *     **ack_up_to_seq** = the largest N such that seq 1..N of this device is
+         *     stored (any stored result, including REJECTED and tombstones).
+         *     missing_seqs = seqs not yet received between ack_up_to_seq+1 and the
+         *     highest stored seq (max 500; missing_seqs_truncated when cut off). An
+         *     empty batch may be sent to ask for the ack.
          */
         post: operations["syncPosTransactions"];
         delete?: never;
@@ -822,8 +828,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Tutup konflik alokasi OPEN → RESOLVED
-         * @description Permission conflict.resolve di lokasi konflik (CanAt). Konflik di luar scope dijawab 404 conflict_not_found (sama dengan /cc/anomalies/{id}). Hanya status OPEN; AUTO_RESOLVED/RESOLVED = 409 invalid_transition. Dua permintaan bersamaan: tepat satu menang. ORDER_CANCELLED hanya sah kalau order terkait sudah CANCELLED/EXPIRED (selain itu, termasuk konflik tanpa order, 409 resolution_not_applicable). Catatan disimpan di details.resolution_note dan audit_logs.
+         * Close an allocation conflict OPEN → RESOLVED
+         * @description Permission conflict.resolve at the conflict's location (CanAt). A conflict outside scope returns 404 conflict_not_found (same as /cc/anomalies/{id}). Only status OPEN; AUTO_RESOLVED or RESOLVED = 409 invalid_transition. Two concurrent requests: exactly one wins. ORDER_CANCELLED is valid only when the related order is already CANCELLED or EXPIRED (otherwise, including conflicts without an order, 409 resolution_not_applicable). The note is stored in details.resolution_note and audit_logs.
          */
         post: operations["resolveAllocationConflict"];
         delete?: never;
@@ -840,8 +846,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Fakta ringkas untuk kalimat ringkasan Command Center
-         * @description Hitungan runout dan stok habis hanya untuk lokasi milik sendiri; stok di lokasi mitra hanya estimasi dan tidak masuk ringkasan (tetap tampil di /cc/runout).
+         * Compact facts for the Command Center summary sentence
+         * @description Runout and stock-out counts cover own locations only; stock at partner locations is an estimate and is excluded from the summary (it still appears in /cc/runout).
          */
         get: operations["getCommandCenterSummary"];
         put?: never;
@@ -860,8 +866,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Saldo stok per lokasi dan produk (physical, reserved, quarantine, available)
-         * @description Stok di lokasi bukan milik sendiri (gudang mitra, marketplace) ditandai is_estimate.
+         * Stock balance per location and product (physical, reserved, quarantine, available)
+         * @description Stock at locations that are not owned (partner warehouse, marketplace) is flagged is_estimate.
          */
         get: operations["listCommandCenterStock"];
         put?: never;
@@ -880,8 +886,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Days of inventory dan perkiraan tanggal habis per lokasi dan produk
-         * @description DOI = available ÷ rata-rata penjualan harian (DIRECT_SALE + COMMIT_SALE dalam 28 hari terakhir ÷ history_days). history_days = hari sejak mutasi pertama (lokasi, produk), 1..28, sehingga SKU baru tidak dibagi 28 hari; riwayat < 7 hari diberi reason SHORT_HISTORY. DOI dibulatkan 2 desimal sekali dan nilai itu yang dipakai untuk level. CRITICAL bila DOI < lead_time_days atau stok habis padahal masih laku; WARNING bila DOI < lead_time_days + safety_days atau available < min_qty; INSUFFICIENT_DATA bila tanpa riwayat penjualan (DOI null, tidak dikarang). Urut paling kritis dulu.
+         * Days of inventory and estimated stock-out date per location and product
+         * @description DOI = available ÷ average daily sales (DIRECT_SALE + COMMIT_SALE over the last 28 days ÷ history_days). history_days = days since the first movement for (location, product), 1..28, so a new SKU is not divided by 28 days; history under 7 days gets reason SHORT_HISTORY. DOI is rounded to 2 decimals once and that value decides the level. CRITICAL when DOI < lead_time_days or stock is out while the product still sells; WARNING when DOI < lead_time_days + safety_days or available < min_qty; INSUFFICIENT_DATA when there is no sales history (DOI null, never invented). Most critical first.
          */
         get: operations["listCommandCenterRunout"];
         put?: never;
@@ -900,8 +906,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Antrean anomali distribusi dan stok, terbaru dulu
-         * @description Pemanggil ber-scope lokasi (SELECTED) hanya melihat anomali dengan subject_type LOCATION di lokasinya; anomali distribusi (party/wilayah) hanya untuk scope ALL.
+         * Distribution and stock anomaly queue, newest first
+         * @description A location-scoped caller (SELECTED) only sees anomalies with subject_type LOCATION at its locations; distribution anomalies (party or territory) are for ALL scope only.
          */
         get: operations["listCommandCenterAnomalies"];
         put?: never;
@@ -926,8 +932,8 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Tindak lanjut anomali (OPEN→ACK, OPEN/ACK→RESOLVED/FALSE_POSITIVE)
-         * @description Perubahan bersyarat dan dicatat di audit_logs. note wajib untuk RESOLVED dan FALSE_POSITIVE.
+         * Follow up an anomaly (OPEN→ACK, OPEN/ACK→RESOLVED/FALSE_POSITIVE)
+         * @description Conditional update, recorded in audit_logs. note is required for RESOLVED and FALSE_POSITIVE.
          */
         patch: operations["updateCommandCenterAnomaly"];
         trace?: never;
@@ -939,7 +945,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Konflik alokasi (POS offline vs reservasi online), terbaru dulu */
+        /** Allocation conflicts (offline POS vs online reservation), newest first */
         get: operations["listCommandCenterConflicts"];
         put?: never;
         post?: never;
@@ -957,8 +963,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Indeks kebocoran wilayah per distributor (Kasus 1)
-         * @description Scan unit (verifikasi konsumen, klaim, test-buy) dikaitkan ke custodian SAAT scan (unit_events ber-party terakhir sebelum scan, fallback custodian sekarang), hanya selama role DISTRIBUTOR party itu aktif, lalu dinilai terhadap wilayah resmi yang berlaku saat scan (NATIONAL tidak pernah keluar wilayah). Scan yang wilayahnya lebih kasar dari wilayah resmi (scan 35, territory 35.78) tidak dinilai (unjudged_scans). Ambang sampel dan baseline dari anomaly_rules OUT_OF_TERRITORY. Rasio dibulatkan 4 desimal sekali; above_baseline memakai rasio yang ditampilkan. Alert bila rasio di atas baseline dengan sampel cukup, atau ada hit TEST_BUY di luar wilayah.
+         * Territory leakage index per distributor (Case 1)
+         * @description Unit scans (consumer verification, claims, test buys) are attributed to the custodian at scan time (the last unit_event with a party before the scan, falling back to the current custodian), only while that party's DISTRIBUTOR role is active, then judged against the official territory in effect at scan time (NATIONAL is never out of territory). Scans whose region is coarser than the official territory (scan 35, territory 35.78) are not judged (unjudged_scans). Sample threshold and baseline come from anomaly_rules OUT_OF_TERRITORY. The ratio is rounded to 4 decimals once; above_baseline uses the displayed ratio. Alert when the ratio is above baseline with enough samples, or when there is an out-of-territory TEST_BUY hit.
          */
         get: operations["listCommandCenterDistributionLeakage"];
         put?: never;
@@ -991,16 +997,16 @@ export interface components {
             name: string;
         };
         MeRole: {
-            /** @description Kode role, mis. ADMIN, CASHIER */
+            /** @description Role code, e.g. ADMIN, CASHIER */
             code: string;
             name: string;
             scope_mode: components["schemas"]["ScopeMode"];
-            /** @description Hanya terisi untuk scope SELECTED */
+            /** @description Only filled for SELECTED scope */
             locations: components["schemas"]["LocationRef"][];
         };
         /** @enum {string} */
         ScopeMode: "ALL" | "SELECTED";
-        /** @description Scope lokasi efektif. ALL = semua lokasi (locations kosong). SELECTED = hanya locations; daftar kosong berarti tidak ada akses lokasi. */
+        /** @description Effective location scope. ALL = every location (locations is empty). SELECTED = only the listed locations; an empty list means no location access. */
         MeScope: {
             mode: components["schemas"]["ScopeMode"];
             locations: components["schemas"]["LocationRef"][];
@@ -1008,12 +1014,12 @@ export interface components {
         MeResponse: {
             user: components["schemas"]["MeUser"];
             roles: components["schemas"]["MeRole"][];
-            /** @description Gabungan permission semua role, urut */
+            /** @description Union of permissions across all roles, sorted */
             permissions: string[];
             scope: components["schemas"]["MeScope"];
         };
         OtpRequest: {
-            /** @description Nomor seluler Indonesia, mis. 0812xxxxxxxx atau +62812xxxxxxxx */
+            /** @description Indonesian mobile number, e.g. 0812xxxxxxxx or +62812xxxxxxxx */
             phone: string;
         };
         OtpRequestResponse: {
@@ -1028,13 +1034,13 @@ export interface components {
         ConsumerMeResponse: {
             /** Format: uuid */
             id: string;
-            /** @description Nomor E.164 yang disamarkan, mis. +62812*****890 */
+            /** @description Masked E.164 number, e.g. +62812*****890 */
             phone_masked: string;
         };
-        /** @description Kode serial 16 karakter Crockford Base32; duplikat (setelah normalisasi) ditolak 422 */
+        /** @description 16-character Crockford Base32 serial code; duplicates (after normalization) are rejected with 422 */
         SerialCodeList: string[];
         MintCodesRequest: {
-            /** @description Kode packaging_levels (UNIT, INNER, CARTON, PALLET) */
+            /** @description packaging_levels code (UNIT, INNER, CARTON, PALLET) */
             level_code: string;
             qty: number;
             /** Format: uuid */
@@ -1056,7 +1062,7 @@ export interface components {
         };
         MintedCode: {
             code: string;
-            /** @description PIN klaim (hanya level UNIT); hanya dikirim sekali di respons mint */
+            /** @description Claim PIN (UNIT level only); sent only once, in the mint response */
             pin?: string;
         };
         MintCodesResponse: {
@@ -1125,10 +1131,10 @@ export interface components {
             to_location_id: string;
             /**
              * Format: uuid
-             * @description Default party pemilik lokasi tujuan
+             * @description Defaults to the party that owns the destination location
              */
             to_party_id?: string;
-            /** @description Program harga, mis. SUBSIDI_SULSEL_Q4 */
+            /** @description Price program, e.g. SUBSIDI_SULSEL_Q4 */
             program_code?: string;
             codes: components["schemas"]["SerialCodeList"];
         };
@@ -1161,7 +1167,7 @@ export interface components {
             units: number;
             /**
              * Format: int64
-             * @description Serial (semua level) yang berubah status oleh request ini
+             * @description Serials (all levels) whose status changed in this request
              */
             serials: number;
             /** Format: int64 */
@@ -1207,7 +1213,7 @@ export interface components {
             code: string;
             level_code: string;
             status: string;
-            /** @description 1 = induk langsung */
+            /** @description 1 = direct parent */
             depth: number;
         };
         TraceDescendant: {
@@ -1242,7 +1248,7 @@ export interface components {
             from_location_code: string;
             to_location_code: string;
             to_party_name: string | null;
-            /** @description Kode serial (unit/karton/palet) yang tercatat di shipment_items */
+            /** @description Serial code (unit, carton, or pallet) recorded in shipment_items */
             via_code: string;
             /** Format: date-time */
             shipped_at: string | null;
@@ -1274,14 +1280,14 @@ export interface components {
         VerifyResult: "GENUINE_FIRST" | "GENUINE_REPEAT" | "SUSPICIOUS" | "NOT_FOUND" | "RECALLED";
         PublicVerifyRequest: {
             code: string;
-            /** @description Wajib berpasangan dengan lng */
+            /** @description Must be sent together with lng */
             lat?: number;
             lng?: number;
             accuracy_m?: number;
         };
         PublicVerifyResponse: {
             result: components["schemas"]["VerifyResult"];
-            /** @description Hanya untuk GENUINE_* dan RECALLED */
+            /** @description Only for GENUINE_* and RECALLED */
             product?: {
                 name: string | null;
                 lot_no: string | null;
@@ -1294,7 +1300,7 @@ export interface components {
         };
         LoyaltyClaimRequest: {
             code: string;
-            /** @description PIN 10 karakter di dalam kemasan */
+            /** @description 10-character PIN inside the package */
             pin: string;
             lat?: number;
             lng?: number;
@@ -1320,11 +1326,11 @@ export interface components {
         };
         ReviewClaimRequest: {
             /**
-             * @description APPROVE/REJECT untuk klaim PENDING; REVERSE (clawback) untuk klaim APPROVED
+             * @description APPROVE/REJECT for PENDING claims; REVERSE (clawback) for APPROVED claims
              * @enum {string}
              */
             decision: "APPROVE" | "REJECT" | "REVERSE";
-            /** @description Alasan; wajib untuk REVERSE */
+            /** @description Reason; required for REVERSE */
             note?: string;
         };
         ReviewClaimResponse: {
@@ -1372,7 +1378,7 @@ export interface components {
             online_buffer_qty: number;
             /**
              * Format: int64
-             * @description Stok yang boleh dijanjikan ke online (0 kalau OFFLINE)
+             * @description Stock that may be promised online (0 when OFFLINE)
              */
             online_atp: number;
             /** Format: date-time */
@@ -1380,7 +1386,7 @@ export interface components {
         };
         InventoryBalancePage: {
             items: components["schemas"]["InventoryBalanceItem"][];
-            /** @description null = halaman terakhir */
+            /** @description null = last page */
             next_cursor: string | null;
         };
         InventoryAdjustmentRequest: {
@@ -1390,10 +1396,10 @@ export interface components {
             product_id: string;
             /**
              * Format: int64
-             * @description ≠ 0; negatif = kurang
+             * @description ≠ 0; negative = decrease
              */
             qty_delta: number;
-            /** @description Wajib, 3-500 karakter (unicode) */
+            /** @description Required, 3-500 characters (unicode) */
             reason: string;
         };
         InventoryQuarantineRequest: {
@@ -1453,7 +1459,7 @@ export interface components {
         InventoryStockChangeResponse: {
             movement: components["schemas"]["InventoryMovement"];
             balance: components["schemas"]["InventoryBalance"];
-            /** @description true = replay Idempotency-Key, tanpa mutasi baru */
+            /** @description true = Idempotency-Key replay, no new movement */
             duplicate: boolean;
         };
         /** @enum {string} */
@@ -1465,9 +1471,9 @@ export interface components {
             qty: number;
         };
         OrderCreateRequest: {
-            /** @description Kosong = D2C_WEB; hanya channel bertipe D2C */
+            /** @description Empty = D2C_WEB; D2C channels only */
             channel_code?: string;
-            /** @description Satu produk hanya boleh muncul sekali */
+            /** @description Each product may appear only once */
             lines: components["schemas"]["OrderCreateLine"][];
             note?: string;
         };
@@ -1493,7 +1499,7 @@ export interface components {
             qty: number;
             /**
              * Format: int64
-             * @description Rupiah utuh
+             * @description Whole rupiah
              */
             unit_price: number;
             /** Format: int64 */
@@ -1564,7 +1570,7 @@ export interface components {
             payment_expires_at: string | null;
             /** Format: uuid */
             fulfillment_location_id: string | null;
-            /** @description Catatan dan penanda operasional, misal note, refund_required, refund_reason, refund_payment_ids, needs_action_reason, expired_reason, split_fulfillment, payload_hash (impor marketplace). */
+            /** @description Operational notes and flags, e.g. note, refund_required, refund_reason, refund_payment_ids, needs_action_reason, expired_reason, split_fulfillment, payload_hash (marketplace import). */
             metadata: {
                 [key: string]: unknown;
             };
@@ -1574,7 +1580,7 @@ export interface components {
             payments: components["schemas"]["OrderPayment"][];
         };
         PaymentWebhookRequest: {
-            /** @description ID event/transaksi di provider; kunci idempotensi */
+            /** @description Event or transaction ID at the provider; idempotency key */
             provider_ref: string;
             /** Format: uuid */
             order_id: string;
@@ -1608,7 +1614,7 @@ export interface components {
             discount?: number;
         };
         MarketplaceOrderRequest: {
-            /** @description Channel bertipe MARKETPLACE (SHOPEE, TOKOPEDIA, TIKTOK_SHOP) */
+            /** @description MARKETPLACE channel (SHOPEE, TOKOPEDIA, TIKTOK_SHOP) */
             channel_code: string;
             external_ref: string;
             /** Format: date-time */
@@ -1624,7 +1630,7 @@ export interface components {
         PosDeviceCreateRequest: {
             /** Format: uuid */
             location_id: string;
-            /** @description 1-100 karakter (unicode), tanpa karakter kontrol */
+            /** @description 1-100 characters (unicode), no control characters */
             name: string;
         };
         PosDeviceRevokeRequest: {
@@ -1653,14 +1659,14 @@ export interface components {
         };
         PosDeviceProvisioned: {
             device: components["schemas"]["PosDevice"];
-            /** @description Token bearer device (prefix pos_). Hanya ditampilkan sekali. */
+            /** @description Device bearer token (prefix pos_). Shown only once. */
             token: string;
-            /** @description Kunci HMAC-SHA256 transaksi (32 byte, hex huruf kecil). Hanya ditampilkan sekali. */
+            /** @description HMAC-SHA256 key for transactions (32 bytes, lowercase hex). Shown only once. */
             signing_key: string;
         };
         PosDevicePage: {
             items: components["schemas"]["PosDevice"][];
-            /** @description null = halaman terakhir */
+            /** @description null = last page */
             next_cursor: string | null;
         };
         PosBootstrap: {
@@ -1688,13 +1694,13 @@ export interface components {
                 sync_max_batch: number;
                 /** Format: int64 */
                 sync_max_body_bytes: number;
-                /** @description Batas serial per transaksi (selain <= qty per line) */
+                /** @description Serial limit per transaction (in addition to <= qty per line) */
                 max_serials_per_txn: number;
-                /** @description Diskon line di atas ini → flag HIGH_DISCOUNT */
+                /** @description A line discount above this → flag HIGH_DISCOUNT */
                 high_discount_percent: number;
                 /**
                  * Format: int64
-                 * @description Total di atas ini → flag OFFLINE_VALUE_LIMIT
+                 * @description A total above this → flag OFFLINE_VALUE_LIMIT
                  */
                 offline_value_limit: number;
             };
@@ -1706,14 +1712,14 @@ export interface components {
                 name: string;
                 uom: string;
             }[];
-            /** @description Price list POS yang berlaku sekarang (list khusus lokasi menggantikan list default seluruhnya). null kalau belum ada. */
+            /** @description The POS price list currently in effect (a location-specific list fully replaces the default list). null when there is none. */
             price_list: null | {
                 /** Format: uuid */
                 id: string;
                 code: string;
                 /**
                  * Format: int64
-                 * @description Dibawa sebagai price_list_version di transaksi
+                 * @description Sent as price_list_version in transactions
                  */
                 version: number;
                 /** Format: uuid */
@@ -1746,7 +1752,7 @@ export interface components {
                 /** Format: uuid */
                 id: string;
                 name: string;
-                /** @description argon2id PHC, untuk verifikasi PIN lokal */
+                /** @description argon2id PHC string, for local PIN verification */
                 pos_pin_hash: string;
             }[];
             serials: components["schemas"]["PosSerialPage"];
@@ -1762,12 +1768,12 @@ export interface components {
         PosHeartbeatRequest: {
             /**
              * Format: date-time
-             * @description Jam device; dipakai menghitung clock_skew_ms
+             * @description Device clock; used to compute clock_skew_ms
              */
             client_time?: string;
             /**
              * Format: int64
-             * @description Jumlah transaksi di outbox yang belum ter-ack. Wajib 0 (dan tanpa gap seq di server) supaya toko dijadikan ONLINE; tidak dikirim = dianggap belum diketahui (toko tidak dijadikan ONLINE).
+             * @description Number of un-acked transactions in the outbox. Must be 0 (with no seq gap on the server) for the store to become ONLINE; omitted = unknown (the store does not become ONLINE).
              */
             pending_count?: number;
         };
@@ -1788,12 +1794,12 @@ export interface components {
              */
             clock_skew_ms: number | null;
             /**
-             * @description null = heartbeat ini menjadikan toko ONLINE
+             * @description null = this heartbeat made the store ONLINE
              * @enum {string|null}
              */
             online_blocked_reason: "pending_count_missing" | "pending_outbox" | "missing_seqs" | null;
         };
-        /** @description Satu transaksi kasir (dibuat offline). Total = Σ(qty × unit_price − discount); pembayaran >= total (kembalian hanya dari CASH; non-tunai tidak boleh melebihi total); teks bebas tanpa karakter kontrol (\n dan \t boleh di note). Field yang tidak dikenal membuat transaksi REJECTED invalid_payload (tetap ikut ditandatangani). */
+        /** @description One cashier transaction (created offline). Total = Σ(qty × unit_price − discount); payments >= total (change only from CASH; non-cash must not exceed the total); free text without control characters (\n and \t are allowed in note). Unknown fields make the transaction REJECTED invalid_payload (they are still signed). */
         PosTransaction: {
             /** Format: uuid */
             client_txn_id: string;
@@ -1801,12 +1807,12 @@ export interface components {
             device_seq: number;
             /**
              * Format: uuid
-             * @description User aktif ber-scope pos.sync di lokasi device
+             * @description Active user with pos.sync scope at the device's location
              */
             cashier_id: string;
             /**
              * Format: date-time
-             * @description Jam device saat transaksi
+             * @description Device clock at transaction time
              */
             occurred_at: string;
             /** Format: int64 */
@@ -1826,27 +1832,27 @@ export interface components {
                  * @description <= qty × unit_price
                  */
                 discount: number;
-                /** @description Kode serial UNIT yang dipindai (<= qty per line, total <= max_serials_per_txn, unik per transaksi setelah normalisasi). Format salah tetap diterima dengan flag SERIAL_INVALID_FORMAT. */
+                /** @description Scanned UNIT serial codes (<= qty per line, total <= max_serials_per_txn, unique per transaction after normalization). Malformed codes are still accepted with flag SERIAL_INVALID_FORMAT. */
                 serials?: string[];
             }[];
             payments: {
                 /**
-                 * @description Maksimal satu CASH
+                 * @description At most one CASH
                  * @enum {string}
                  */
                 method: "CASH" | "EDC" | "QRIS";
                 /** Format: int64 */
                 amount: number;
-                /** @description Wajib untuk EDC/QRIS (dedupe per (provider, provider_ref)); tidak dipakai untuk CASH */
+                /** @description Required for EDC/QRIS (deduplicated per (provider, provider_ref)); not used for CASH */
                 approval_ref?: string;
             }[];
-            /** @description hex HMAC-SHA256(signing_key, kanonis) */
+            /** @description hex HMAC-SHA256(signing_key, canonical) */
             signature: string;
         };
         PosSyncRequest: {
             /**
              * Format: date-time
-             * @description Jam device saat batch dikirim (untuk clock_skew_ms)
+             * @description Device clock when the batch is sent (for clock_skew_ms)
              */
             client_time?: string;
             transactions: components["schemas"]["PosTransaction"][];
@@ -1856,7 +1862,7 @@ export interface components {
             type: "OFFLINE_SALE_PREEMPT" | "STOCK_DISCREPANCY" | "SERIAL_DOUBLE_SALE" | "SERIAL_UNREGISTERED" | "PAYMENT_REF_DUPLICATE";
             /**
              * Format: uuid
-             * @description allocation_conflicts.id (tiga jenis pertama)
+             * @description allocation_conflicts.id (first three kinds)
              */
             conflict_id?: string;
             /** Format: uuid */
@@ -1865,12 +1871,12 @@ export interface components {
             qty?: number;
             /**
              * Format: uuid
-             * @description Order online yang reservasinya di-preempt
+             * @description Online order whose reservation was preempted
              */
             order_id?: string;
             /** Format: uuid */
             reservation_id?: string;
-            /** @description Kode serial */
+            /** @description Serial code */
             code?: string;
             /** @description SERIAL_DOUBLE_SALE: already_sold, wrong_location, not_sellable_status, not_unit, product_mismatch, sell_failed. SERIAL_UNREGISTERED: not_registered. PAYMENT_REF_DUPLICATE: approval_ref_reused. */
             reason?: string;
@@ -1878,7 +1884,7 @@ export interface components {
             approval_ref?: string;
             anomaly_rule?: string;
         };
-        /** @description result_detail yang disimpan dan di-replay apa adanya. Untuk RETRY dan REJECTED yang tidak disimpan (invalid_signature, identitas rusak, device_seq_reused) hanya reason, message, dan errors. */
+        /** @description The stored result_detail, replayed as is. For RETRY and for REJECTED results that are not stored (invalid_signature, broken identity, device_seq_reused) only reason, message, and errors. message and errors[].message are Indonesian, cashier-facing text. */
         PosSyncDetail: {
             /** Format: uuid */
             server_txn_id?: string;
@@ -1891,13 +1897,13 @@ export interface components {
             received_at?: string;
             /**
              * Format: date-time
-             * @description Waktu terkoreksi skew yang dipakai ledger
+             * @description Skew-corrected time used by the ledger
              */
             occurred_at?: string;
             /** Format: int64 */
             clock_skew_ms?: number;
             flags?: ("CASHIER_INACTIVE" | "CLOCK_SKEW" | "FUTURE_TIMESTAMP" | "HIGH_DISCOUNT" | "OFFLINE_TOO_LONG" | "OFFLINE_VALUE_LIMIT" | "PRICE_MISMATCH" | "PRICE_STALE" | "SERIAL_INVALID_FORMAT" | "ZERO_TOTAL")[];
-            /** @description Kode yang dipindai tetapi bukan format serial (apa adanya) */
+            /** @description Scanned codes that are not in serial format (as sent) */
             invalid_serials?: string[];
             conflicts?: components["schemas"]["PosSyncConflict"][];
             serials_sold?: string[];
@@ -1915,11 +1921,11 @@ export interface components {
             };
         };
         PosSyncResult: {
-            /** @description Posisi transaksi di request (hasil diurutkan menurut device_seq) */
+            /** @description Position of the transaction in the request (results are ordered by device_seq) */
             index: number;
             /**
              * Format: uuid
-             * @description Nil UUID kalau identitas item tidak bisa dibaca
+             * @description Nil UUID when the item's identity cannot be read
              */
             client_txn_id: string;
             /** Format: int64 */
@@ -1927,7 +1933,7 @@ export interface components {
             /** @enum {string} */
             status: "ACCEPTED" | "ACCEPTED_WITH_CONFLICT" | "REJECTED" | "DUPLICATE" | "RETRY";
             /**
-             * @description Hasil tersimpan (untuk DUPLICATE = hasil asli); kosong untuk RETRY
+             * @description Stored result (for DUPLICATE = the original result); empty for RETRY
              * @enum {string}
              */
             result: "ACCEPTED" | "ACCEPTED_WITH_CONFLICT" | "REJECTED" | "";
@@ -1945,7 +1951,7 @@ export interface components {
         ConflictResolveRequest: {
             /** @enum {string} */
             resolution: "CUSTOMER_COMPENSATED" | "ORDER_CANCELLED" | "STOCK_RECOUNTED" | "SERIAL_RECORD_CORRECTED" | "FALSE_ALARM" | "OTHER";
-            /** @description Wajib; tanpa karakter kontrol selain \n dan \t */
+            /** @description Required; no control characters other than \n and \t */
             note: string;
         };
         /** @enum {string} */
@@ -1971,14 +1977,14 @@ export interface components {
                 insufficient_data_items: number;
                 /**
                  * Format: date
-                 * @description Tanggal habis paling dekat di antara item CRITICAL/WARNING (zona lokasi)
+                 * @description Earliest stock-out date among CRITICAL/WARNING items (location time zone)
                  */
                 earliest_runout_date: string | null;
             };
             stock: {
                 /**
                  * Format: int64
-                 * @description SKU-lokasi milik sendiri dengan available 0
+                 * @description Own SKU-location pairs with available 0
                  */
                 out_of_stock_items: number;
                 /** Format: int64 */
@@ -1997,7 +2003,7 @@ export interface components {
                     /** Format: int64 */
                     CRITICAL: number;
                 };
-                /** @description Party dengan anomali OPEN terbanyak */
+                /** @description Party with the most OPEN anomalies */
                 top_party: components["schemas"]["CCPartyCount"] | null;
             };
             conflicts: {
@@ -2009,7 +2015,7 @@ export interface components {
                 total: number;
                 /**
                  * Format: int64
-                 * @description Toko dengan sync_state OFFLINE
+                 * @description Stores with sync_state OFFLINE
                  */
                 offline: number;
             };
@@ -2043,7 +2049,7 @@ export interface components {
             quarantine_qty: number;
             /** Format: int64 */
             available_qty: number;
-            /** @description true untuk lokasi bukan milik sendiri; angkanya perkiraan dari sell-in tercatat */
+            /** @description true for locations that are not owned; the figure is an estimate from recorded sell-in */
             is_estimate: boolean;
             /** Format: date-time */
             updated_at: string;
@@ -2067,23 +2073,23 @@ export interface components {
             is_estimate: boolean;
             /**
              * Format: int64
-             * @description Unit terjual dalam jendela 28 hari
+             * @description Units sold in the 28-day window
              */
             sold_qty: number;
-            /** @description Pembagi rata-rata = hari sejak mutasi pertama (lokasi, produk); null tanpa penjualan */
+            /** @description Average divisor = days since the first movement for (location, product); null without sales */
             history_days: number | null;
-            /** @description null tanpa riwayat penjualan */
+            /** @description null without sales history */
             avg_daily_sales: number | null;
-            /** @description null tanpa riwayat penjualan */
+            /** @description null without sales history */
             days_of_inventory: number | null;
             /**
              * Format: date
-             * @description Hari ini (zona lokasi) + DOI; null kalau DOI null atau > 3650
+             * @description Today (location time zone) + DOI; null when DOI is null or > 3650
              */
             runout_date: string | null;
             level: components["schemas"]["CCRunoutLevel"];
             reasons: ("STOCK_OUT" | "BELOW_LEAD_TIME" | "BELOW_SAFETY_DAYS" | "BELOW_MIN_QTY" | "NO_SALES_HISTORY" | "SHORT_HISTORY" | "NO_POLICY")[];
-            /** @description false = tanpa stock_policies; hanya aturan stok habis yang berlaku */
+            /** @description false = no stock_policies; only the stock-out rule applies */
             has_policy: boolean;
             /** Format: int64 */
             min_qty: number | null;
@@ -2139,7 +2145,7 @@ export interface components {
         CCAnomalyUpdateRequest: {
             /** @enum {string} */
             status: "ACK" | "RESOLVED" | "FALSE_POSITIVE";
-            /** @description Wajib untuk RESOLVED dan FALSE_POSITIVE (disimpan sebagai resolution_note dan di audit). Pada ACK boleh diisi, tetapi hanya dicatat di audit_logs.reason, tidak disimpan di anomali. Spasi di tepi dibuang. Karakter kontrol (NUL, ESC, CR, DEL, C1) ditolak 422 invalid_characters; baris baru dan tab diizinkan. */
+            /** @description Required for RESOLVED and FALSE_POSITIVE (stored as resolution_note and in the audit log). Optional for ACK, where it is only recorded in audit_logs.reason, not on the anomaly. Leading and trailing spaces are trimmed. Control characters (NUL, ESC, CR, DEL, C1) are rejected with 422 invalid_characters; newline and tab are allowed. */
             note?: string | null;
         };
         CCConflictItem: {
@@ -2187,7 +2193,7 @@ export interface components {
             party_id: string;
             party_name: string;
             /**
-             * @description null = distributor belum punya wilayah resmi yang berlaku (rasio tidak dihitung)
+             * @description null = the distributor has no official territory in effect (ratio not computed)
              * @enum {string|null}
              */
             coverage_mode: "NATIONAL" | "SELECTED" | null;
@@ -2199,24 +2205,24 @@ export interface components {
             unlocated_scans: number;
             /**
              * Format: int64
-             * @description Scan yang bisa dinilai dalam/luar wilayah (dasar rasio)
+             * @description Scans that can be judged in or out of territory (ratio base)
              */
             judged_scans: number;
             /**
              * Format: int64
-             * @description Scan berwilayah yang tidak bisa dinilai (wilayah scan lebih kasar dari wilayah resmi, atau tanpa wilayah resmi saat scan)
+             * @description Scans with a region that cannot be judged (scan region coarser than the official territory, or no official territory at scan time)
              */
             unjudged_scans: number;
             /** Format: int64 */
             out_of_territory_scans: number | null;
-            /** @description Luar wilayah ÷ scan yang dinilai, 4 desimal */
+            /** @description Out of territory ÷ judged scans, 4 decimals */
             leak_ratio: number | null;
             sample_too_small: boolean;
             /** Format: int64 */
             test_buy_scans: number;
             /**
              * Format: int64
-             * @description Scan TEST_BUY di luar wilayah (sinyal kuat)
+             * @description Out-of-territory TEST_BUY scans (strong signal)
              */
             test_buy_hits: number;
             above_baseline: boolean;
@@ -2250,15 +2256,15 @@ export interface components {
             type: string;
             title: string;
             status: number;
-            /** @description Kode stabil untuk dipetakan ke pesan di frontend */
+            /** @description Stable machine-readable code; never changes with the wording */
             code: string;
             detail?: string;
             request_id?: string;
-            /** @description Diisi untuk 422 validation_failed */
+            /** @description Filled for 422 validation_failed */
             errors?: components["schemas"]["FieldError"][];
         };
         FieldError: {
-            /** @description Path JSON, mis. lines[0].qty */
+            /** @description JSON path, e.g. lines[0].qty */
             field: string;
             code: string;
             message: string;
@@ -2281,7 +2287,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Proses hidup */
+            /** @description Process is running */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2301,7 +2307,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Siap menerima request */
+            /** @description Ready to serve requests */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2310,7 +2316,7 @@ export interface operations {
                     "application/json": components["schemas"]["ReadyResponse"];
                 };
             };
-            /** @description Belum siap */
+            /** @description database_unavailable or schema_not_ready */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -2334,7 +2340,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Login berhasil */
+            /** @description Logged in */
             200: {
                 headers: {
                     /** @description __Host-session=<token>; Path=/; Max-Age=43200; HttpOnly; Secure; SameSite=Lax */
@@ -2345,7 +2351,7 @@ export interface operations {
                     "application/json": components["schemas"]["MeResponse"];
                 };
             };
-            /** @description Lihat field code (problem+json) */
+            /** @description invalid_request (body is not valid JSON or has unknown fields) */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2354,7 +2360,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description invalid_credentials (email atau password salah) */
+            /** @description invalid_credentials (wrong email or password) */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2363,7 +2369,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description account_disabled, atau csrf_rejected */
+            /** @description account_disabled or csrf_rejected */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2372,7 +2378,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Lihat field code (problem+json) */
+            /** @description unsupported_media_type (Content-Type must be application/json) */
             415: {
                 headers: {
                     [name: string]: unknown;
@@ -2381,7 +2387,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Lihat field code (problem+json) */
+            /** @description validation_failed; per-field messages in errors[] */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2390,10 +2396,10 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description too_many_attempts; detail memuat menit tunggu */
+            /** @description too_many_attempts; detail states how many minutes to wait */
             429: {
                 headers: {
-                    /** @description Detik sampai boleh mencoba lagi */
+                    /** @description Seconds until the client may retry */
                     "Retry-After"?: number;
                     [name: string]: unknown;
                 };
@@ -2401,10 +2407,10 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description server_busy (verifikasi password bersamaan penuh); coba lagi */
+            /** @description server_busy (concurrent password verification slots are full); retry */
             503: {
                 headers: {
-                    /** @description Detik sampai boleh mencoba lagi */
+                    /** @description Seconds until the client may retry */
                     "Retry-After"?: number;
                     [name: string]: unknown;
                 };
@@ -2423,14 +2429,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Sesi dicabut (kalau ada) dan cookie dihapus */
+            /** @description Session revoked (if any) and cookie cleared */
             204: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Lihat field code (problem+json) */
+            /** @description csrf_rejected (cross-site request) */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2439,7 +2445,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Lihat field code (problem+json) */
+            /** @description unsupported_media_type (Content-Type must be application/json) */
             415: {
                 headers: {
                     [name: string]: unknown;
@@ -2459,7 +2465,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Profil */
+            /** @description Profile */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2468,7 +2474,7 @@ export interface operations {
                     "application/json": components["schemas"]["MeResponse"];
                 };
             };
-            /** @description unauthenticated atau session_expired */
+            /** @description unauthenticated or session_expired */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2477,7 +2483,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Pemanggil bukan staff (mis. token device) */
+            /** @description forbidden; caller is not staff (e.g. a POS device token) */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2501,7 +2507,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Kode dikirim (respons sama untuk nomor baru maupun lama) */
+            /** @description Code sent (same response for new and existing numbers) */
             202: {
                 headers: {
                     [name: string]: unknown;
@@ -2510,7 +2516,7 @@ export interface operations {
                     "application/json": components["schemas"]["OtpRequestResponse"];
                 };
             };
-            /** @description Lihat field code (problem+json) */
+            /** @description csrf_rejected (cross-site request) */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2519,7 +2525,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Lihat field code (problem+json) */
+            /** @description unsupported_media_type (Content-Type must be application/json) */
             415: {
                 headers: {
                     [name: string]: unknown;
@@ -2528,7 +2534,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Lihat field code (problem+json) */
+            /** @description validation_failed; per-field messages in errors[] */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2537,10 +2543,10 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description too_many_attempts; detail memuat menit tunggu */
+            /** @description too_many_attempts; detail states how many minutes to wait */
             429: {
                 headers: {
-                    /** @description Detik sampai boleh mencoba lagi */
+                    /** @description Seconds until the client may retry */
                     "Retry-After"?: number;
                     [name: string]: unknown;
                 };
@@ -2548,7 +2554,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Lihat field code (problem+json) */
+            /** @description otp_unavailable (consumer login is disabled on this server) */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -2572,7 +2578,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Login konsumen berhasil */
+            /** @description Consumer logged in */
             200: {
                 headers: {
                     /** @description __Host-consumer=<token>; Path=/; Max-Age=604800; HttpOnly; Secure; SameSite=Lax */
@@ -2583,7 +2589,7 @@ export interface operations {
                     "application/json": components["schemas"]["ConsumerMeResponse"];
                 };
             };
-            /** @description otp_invalid (kode salah atau kedaluwarsa) */
+            /** @description otp_invalid (wrong or expired code) */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2592,7 +2598,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description consumer_blocked atau csrf_rejected */
+            /** @description consumer_blocked or csrf_rejected */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2601,7 +2607,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Lihat field code (problem+json) */
+            /** @description unsupported_media_type (Content-Type must be application/json) */
             415: {
                 headers: {
                     [name: string]: unknown;
@@ -2610,7 +2616,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Lihat field code (problem+json) */
+            /** @description validation_failed; per-field messages in errors[] */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2619,10 +2625,10 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description too_many_attempts; detail memuat menit tunggu */
+            /** @description too_many_attempts. Per-IP quota used up: detail states how many minutes to wait. Per-code quota used up: detail tells the consumer to request a new code. */
             429: {
                 headers: {
-                    /** @description Detik sampai boleh mencoba lagi */
+                    /** @description Seconds until the client may retry */
                     "Retry-After"?: number;
                     [name: string]: unknown;
                 };
@@ -2630,7 +2636,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Lihat field code (problem+json) */
+            /** @description otp_unavailable (consumer login is disabled on this server) */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -2650,7 +2656,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Profil konsumen */
+            /** @description Consumer profile */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2659,7 +2665,7 @@ export interface operations {
                     "application/json": components["schemas"]["ConsumerMeResponse"];
                 };
             };
-            /** @description Lihat field code (problem+json) */
+            /** @description unauthenticated or session_expired */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2679,14 +2685,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Sesi dicabut (kalau ada) dan cookie dihapus */
+            /** @description Session revoked (if any) and cookie cleared */
             204: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Lihat field code (problem+json) */
+            /** @description csrf_rejected (cross-site request) */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2695,7 +2701,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Lihat field code (problem+json) */
+            /** @description unsupported_media_type (Content-Type must be application/json) */
             415: {
                 headers: {
                     [name: string]: unknown;
@@ -2719,7 +2725,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Job cetak dibuat */
+            /** @description Print job created */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -2728,7 +2734,7 @@ export interface operations {
                     "application/json": components["schemas"]["MintCodesResponse"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2737,7 +2743,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2746,7 +2752,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2755,7 +2761,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2779,7 +2785,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Label di-commission */
+            /** @description Labels commissioned */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2788,7 +2794,7 @@ export interface operations {
                     "application/json": components["schemas"]["CommissionResponse"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2797,7 +2803,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2806,7 +2812,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2815,7 +2821,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2824,7 +2830,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2848,7 +2854,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Serial diterima */
+            /** @description Serials received */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2857,7 +2863,7 @@ export interface operations {
                     "application/json": components["schemas"]["ReceiveSerialsResponse"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2866,7 +2872,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2875,7 +2881,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2884,7 +2890,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2893,7 +2899,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2917,7 +2923,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Agregasi berhasil */
+            /** @description Packed */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2926,7 +2932,7 @@ export interface operations {
                     "application/json": components["schemas"]["AggregateResponse"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2935,7 +2941,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2944,7 +2950,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2953,7 +2959,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2962,7 +2968,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2978,14 +2984,14 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Kode serial 16 karakter Crockford Base32 (huruf kecil/tanda hubung dinormalkan) */
+                /** @description 16-character Crockford Base32 serial code (lowercase and hyphens are normalized) */
                 code: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Kemasan dibongkar */
+            /** @description Container unpacked */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2994,7 +3000,7 @@ export interface operations {
                     "application/json": components["schemas"]["UnpackResponse"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -3003,7 +3009,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3012,7 +3018,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3021,7 +3027,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3037,14 +3043,14 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Kode serial 16 karakter Crockford Base32 (huruf kecil/tanda hubung dinormalkan) */
+                /** @description 16-character Crockford Base32 serial code (lowercase and hyphens are normalized) */
                 code: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Genealogi serial */
+            /** @description Serial genealogy */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3053,7 +3059,7 @@ export interface operations {
                     "application/json": components["schemas"]["TraceResponse"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -3062,7 +3068,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3071,7 +3077,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3097,7 +3103,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Batch di-recall */
+            /** @description Batch recalled */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3106,7 +3112,7 @@ export interface operations {
                     "application/json": components["schemas"]["RecallResponse"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -3115,7 +3121,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3124,7 +3130,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3133,7 +3139,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3157,7 +3163,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Shipment dikirim */
+            /** @description Shipment dispatched */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -3166,7 +3172,7 @@ export interface operations {
                     "application/json": components["schemas"]["SerialShipmentResponse"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -3175,7 +3181,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3184,7 +3190,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3193,7 +3199,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3202,7 +3208,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3224,7 +3230,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Shipment diterima (atau sudah diterima sebelumnya) */
+            /** @description Shipment received (or already received earlier) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3233,7 +3239,7 @@ export interface operations {
                     "application/json": components["schemas"]["SerialShipmentResponse"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -3242,7 +3248,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3251,7 +3257,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3260,7 +3266,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3286,7 +3292,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Keputusan tersimpan */
+            /** @description Decision saved */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3295,7 +3301,7 @@ export interface operations {
                     "application/json": components["schemas"]["ReviewClaimResponse"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -3304,7 +3310,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3313,7 +3319,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3322,7 +3328,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3331,7 +3337,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3355,7 +3361,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Hasil verifikasi */
+            /** @description Verification result */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3364,7 +3370,7 @@ export interface operations {
                     "application/json": components["schemas"]["PublicVerifyResponse"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3373,7 +3379,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3382,7 +3388,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -3406,7 +3412,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Klaim yang sama dikirim ulang */
+            /** @description Same claim sent again */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3415,7 +3421,7 @@ export interface operations {
                     "application/json": components["schemas"]["LoyaltyClaimResponse"];
                 };
             };
-            /** @description Klaim tercatat */
+            /** @description Claim recorded */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -3424,7 +3430,7 @@ export interface operations {
                     "application/json": components["schemas"]["LoyaltyClaimResponse"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -3433,7 +3439,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3442,7 +3448,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3451,7 +3457,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3460,7 +3466,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             423: {
                 headers: {
                     [name: string]: unknown;
@@ -3469,7 +3475,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -3489,7 +3495,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Saldo poin */
+            /** @description Points balance */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3498,7 +3504,7 @@ export interface operations {
                     "application/json": components["schemas"]["LoyaltyBalanceResponse"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -3507,7 +3513,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (application/problem+json, kode di field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3532,7 +3538,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Satu halaman saldo */
+            /** @description One page of balances */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3541,7 +3547,7 @@ export interface operations {
                     "application/json": components["schemas"]["InventoryBalancePage"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -3550,7 +3556,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3559,7 +3565,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3574,7 +3580,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Kunci idempotensi dari klien (1-255 karakter ASCII terlihat) */
+                /** @description Client idempotency key (1-255 visible ASCII characters) */
                 "Idempotency-Key": string;
             };
             path?: never;
@@ -3586,7 +3592,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Replay Idempotency-Key (duplicate=true) */
+            /** @description Idempotency-Key replay (duplicate=true) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3595,7 +3601,7 @@ export interface operations {
                     "application/json": components["schemas"]["InventoryStockChangeResponse"];
                 };
             };
-            /** @description Mutasi dicatat */
+            /** @description Movement recorded */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -3604,7 +3610,7 @@ export interface operations {
                     "application/json": components["schemas"]["InventoryStockChangeResponse"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3613,7 +3619,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -3622,7 +3628,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3631,7 +3637,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3640,7 +3646,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3655,7 +3661,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Kunci idempotensi dari klien (1-255 karakter ASCII terlihat) */
+                /** @description Client idempotency key (1-255 visible ASCII characters) */
                 "Idempotency-Key": string;
             };
             path?: never;
@@ -3667,7 +3673,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Replay Idempotency-Key (duplicate=true) */
+            /** @description Idempotency-Key replay (duplicate=true) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3676,7 +3682,7 @@ export interface operations {
                     "application/json": components["schemas"]["InventoryStockChangeResponse"];
                 };
             };
-            /** @description Mutasi dicatat */
+            /** @description Movement recorded */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -3685,7 +3691,7 @@ export interface operations {
                     "application/json": components["schemas"]["InventoryStockChangeResponse"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3694,7 +3700,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -3703,7 +3709,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3712,7 +3718,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3721,7 +3727,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3736,7 +3742,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Kunci idempotensi dari klien (1-255 karakter ASCII terlihat) */
+                /** @description Client idempotency key (1-255 visible ASCII characters) */
                 "Idempotency-Key": string;
             };
             path?: never;
@@ -3748,10 +3754,10 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Order dibuat (atau replay) */
+            /** @description Order created (or replayed) */
             201: {
                 headers: {
-                    /** @description true kalau respons adalah replay */
+                    /** @description true when the response is a replay */
                     "Idempotent-Replayed"?: string;
                     [name: string]: unknown;
                 };
@@ -3759,7 +3765,7 @@ export interface operations {
                     "application/json": components["schemas"]["Order"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3768,7 +3774,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -3777,7 +3783,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3786,7 +3792,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3795,7 +3801,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3826,7 +3832,7 @@ export interface operations {
                     "application/json": components["schemas"]["Order"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -3835,7 +3841,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3844,7 +3850,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3870,7 +3876,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Order sesudah dibatalkan */
+            /** @description Order after cancellation */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3879,7 +3885,7 @@ export interface operations {
                     "application/json": components["schemas"]["Order"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -3888,7 +3894,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3897,7 +3903,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3906,7 +3912,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3915,7 +3921,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -3941,7 +3947,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Order sesudah dikirim */
+            /** @description Order after shipping */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3950,7 +3956,7 @@ export interface operations {
                     "application/json": components["schemas"]["Order"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -3959,7 +3965,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3968,7 +3974,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3977,7 +3983,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3986,7 +3992,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4001,7 +4007,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Unix detik; harus dalam ±5 menit dari jam server (401 stale_timestamp) */
+                /** @description Unix seconds; must be within ±5 minutes of server time (401 stale_timestamp) */
                 "X-Mganik-Timestamp": string;
                 /** @description v1=<hex HMAC-SHA256(WEBHOOK_SECRET, timestamp + "." + body)> (401 invalid_signature) */
                 "X-Mganik-Signature": string;
@@ -4015,7 +4021,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Event diproses (atau duplikat) */
+            /** @description Event processed (or duplicate) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4024,7 +4030,7 @@ export interface operations {
                     "application/json": components["schemas"]["PaymentWebhookResponse"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4033,7 +4039,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -4042,7 +4048,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4051,7 +4057,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4060,7 +4066,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -4075,7 +4081,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Unix detik; harus dalam ±5 menit dari jam server (401 stale_timestamp) */
+                /** @description Unix seconds; must be within ±5 minutes of server time (401 stale_timestamp) */
                 "X-Mganik-Timestamp": string;
                 /** @description v1=<hex HMAC-SHA256(WEBHOOK_SECRET, timestamp + "." + body)> (401 invalid_signature) */
                 "X-Mganik-Signature": string;
@@ -4089,7 +4095,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Duplikat (order yang sudah ada) */
+            /** @description Duplicate (existing order) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4098,7 +4104,7 @@ export interface operations {
                     "application/json": components["schemas"]["MarketplaceImportResponse"];
                 };
             };
-            /** @description Order baru */
+            /** @description New order */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -4107,7 +4113,7 @@ export interface operations {
                     "application/json": components["schemas"]["MarketplaceImportResponse"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4116,7 +4122,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4125,7 +4131,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4134,7 +4140,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -4158,7 +4164,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Satu halaman device */
+            /** @description One page of devices */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4167,7 +4173,7 @@ export interface operations {
                     "application/json": components["schemas"]["PosDevicePage"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4176,7 +4182,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4185,7 +4191,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4209,7 +4215,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Device dibuat; simpan token dan signing_key di device (tidak bisa diambil lagi) */
+            /** @description Device created; store token and signing_key on the device (they cannot be retrieved again) */
             201: {
                 headers: {
                     /** @description no-store */
@@ -4220,7 +4226,7 @@ export interface operations {
                     "application/json": components["schemas"]["PosDeviceProvisioned"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -4229,7 +4235,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4238,7 +4244,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4247,7 +4253,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4273,7 +4279,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Device berstatus REVOKED */
+            /** @description Device with status REVOKED */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4282,7 +4288,7 @@ export interface operations {
                     "application/json": components["schemas"]["PosDevice"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4291,7 +4297,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4300,7 +4306,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -4309,7 +4315,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4329,7 +4335,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Data bootstrap */
+            /** @description Bootstrap data */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4338,7 +4344,7 @@ export interface operations {
                     "application/json": components["schemas"]["PosBootstrap"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4347,7 +4353,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4369,7 +4375,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Satu halaman serial (urut kode) */
+            /** @description One page of serials (ordered by code) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4378,7 +4384,7 @@ export interface operations {
                     "application/json": components["schemas"]["PosSerialPage"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4387,7 +4393,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4396,7 +4402,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4420,7 +4426,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Status setelah heartbeat */
+            /** @description Status after the heartbeat */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4429,7 +4435,7 @@ export interface operations {
                     "application/json": components["schemas"]["PosHeartbeatResponse"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4438,7 +4444,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4447,7 +4453,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             413: {
                 headers: {
                     [name: string]: unknown;
@@ -4456,7 +4462,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4480,7 +4486,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Hasil per transaksi (urut device_seq) dan status ack */
+            /** @description Per-transaction results (ordered by device_seq) and ack status */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4489,7 +4495,7 @@ export interface operations {
                     "application/json": components["schemas"]["PosSyncResponse"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -4498,7 +4504,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4507,7 +4513,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4516,7 +4522,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4525,7 +4531,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             413: {
                 headers: {
                     [name: string]: unknown;
@@ -4534,7 +4540,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4543,7 +4549,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -4569,7 +4575,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Konflik sesudah ditutup */
+            /** @description Conflict after closing */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4578,7 +4584,7 @@ export interface operations {
                     "application/json": components["schemas"]["CCConflictItem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -4587,7 +4593,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4596,7 +4602,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4605,7 +4611,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -4614,7 +4620,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4623,7 +4629,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Error domain (problem+json, lihat field code) */
+            /** @description Domain error (problem+json); see the code field */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4643,7 +4649,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Angka terstruktur; UI yang menyusun kalimat */
+            /** @description Structured numbers; the UI composes the sentence */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4652,7 +4658,7 @@ export interface operations {
                     "application/json": components["schemas"]["CCSummaryResponse"];
                 };
             };
-            /** @description Belum masuk */
+            /** @description Not logged in */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4661,7 +4667,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Tanpa permission, atau filter lokasi di luar scope */
+            /** @description Missing permission, or a location filter outside scope */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4676,9 +4682,9 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
-                /** @description next_cursor dari halaman sebelumnya (opaque) */
+                /** @description next_cursor from the previous page (opaque) */
                 cursor?: string;
-                /** @description Kode location_types, mis. CENTRAL_WH, HUB, OWN_STORE, PARTNER_WH */
+                /** @description location_types code, e.g. CENTRAL_WH, HUB, OWN_STORE, PARTNER_WH */
                 location_type?: string;
                 location_id?: string;
                 product_id?: string;
@@ -4689,7 +4695,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Satu halaman saldo, urut kode lokasi lalu SKU */
+            /** @description One page of balances, ordered by location code then SKU */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4698,7 +4704,7 @@ export interface operations {
                     "application/json": components["schemas"]["CCStockPage"];
                 };
             };
-            /** @description Belum masuk */
+            /** @description Not logged in */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4707,7 +4713,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Tanpa permission, atau filter lokasi di luar scope */
+            /** @description Missing permission, or a location filter outside scope */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4716,7 +4722,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Query param tidak valid (limit, cursor, filter) */
+            /** @description Invalid query parameter (limit, cursor, filter) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4731,9 +4737,9 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
-                /** @description next_cursor dari halaman sebelumnya (opaque) */
+                /** @description next_cursor from the previous page (opaque) */
                 cursor?: string;
-                /** @description Kode location_types, mis. CENTRAL_WH, HUB, OWN_STORE, PARTNER_WH */
+                /** @description location_types code, e.g. CENTRAL_WH, HUB, OWN_STORE, PARTNER_WH */
                 location_type?: string;
                 location_id?: string;
                 product_id?: string;
@@ -4745,7 +4751,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Satu halaman runout */
+            /** @description One page of runout rows */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4754,7 +4760,7 @@ export interface operations {
                     "application/json": components["schemas"]["CCRunoutResponse"];
                 };
             };
-            /** @description Belum masuk */
+            /** @description Not logged in */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4763,7 +4769,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Tanpa permission, atau filter lokasi di luar scope */
+            /** @description Missing permission, or a location filter outside scope */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4772,7 +4778,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Query param tidak valid (limit, cursor, filter) */
+            /** @description Invalid query parameter (limit, cursor, filter) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4787,11 +4793,11 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
-                /** @description next_cursor dari halaman sebelumnya (opaque) */
+                /** @description next_cursor from the previous page (opaque) */
                 cursor?: string;
                 status?: components["schemas"]["CCAnomalyStatus"];
                 severity?: components["schemas"]["CCSeverity"];
-                /** @description Kode anomaly_rules, mis. OUT_OF_TERRITORY */
+                /** @description anomaly_rules code, e.g. OUT_OF_TERRITORY */
                 rule?: string;
                 party_id?: string;
             };
@@ -4801,7 +4807,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Satu halaman anomali */
+            /** @description One page of anomalies */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4810,7 +4816,7 @@ export interface operations {
                     "application/json": components["schemas"]["CCAnomalyPage"];
                 };
             };
-            /** @description Belum masuk */
+            /** @description Not logged in */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4819,7 +4825,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Tanpa permission, atau filter lokasi di luar scope */
+            /** @description Missing permission, or a location filter outside scope */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4828,7 +4834,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Query param tidak valid (limit, cursor, filter) */
+            /** @description Invalid query parameter (limit, cursor, filter) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4854,7 +4860,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Anomali setelah diubah */
+            /** @description Anomaly after the update */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4863,7 +4869,7 @@ export interface operations {
                     "application/json": components["schemas"]["CCAnomalyItem"];
                 };
             };
-            /** @description Body bukan JSON valid atau memuat field tak dikenal */
+            /** @description invalid_request (body is not valid JSON or has unknown fields) */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -4872,7 +4878,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Belum masuk */
+            /** @description Not logged in */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4881,7 +4887,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Tanpa permission, atau filter lokasi di luar scope */
+            /** @description Missing permission, or a location filter outside scope */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4890,7 +4896,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Anomali tidak ada atau di luar scope (anomaly_not_found) */
+            /** @description anomaly_not_found (missing or outside scope) */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -4899,7 +4905,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Transisi tidak sah dari status sekarang (invalid_transition) */
+            /** @description invalid_transition (not allowed from the current status) */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4908,7 +4914,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Query param tidak valid (limit, cursor, filter) */
+            /** @description Invalid query parameter (limit, cursor, filter) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4923,7 +4929,7 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
-                /** @description next_cursor dari halaman sebelumnya (opaque) */
+                /** @description next_cursor from the previous page (opaque) */
                 cursor?: string;
                 status?: "OPEN" | "AUTO_RESOLVED" | "RESOLVED";
                 kind?: "OFFLINE_SALE_PREEMPT" | "SERIAL_DOUBLE_SALE" | "STOCK_DISCREPANCY";
@@ -4935,7 +4941,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Satu halaman konflik */
+            /** @description One page of conflicts */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4944,7 +4950,7 @@ export interface operations {
                     "application/json": components["schemas"]["CCConflictPage"];
                 };
             };
-            /** @description Belum masuk */
+            /** @description Not logged in */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4953,7 +4959,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Tanpa permission, atau filter lokasi di luar scope */
+            /** @description Missing permission, or a location filter outside scope */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4962,7 +4968,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Query param tidak valid (limit, cursor, filter) */
+            /** @description Invalid query parameter (limit, cursor, filter) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -4977,9 +4983,9 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
-                /** @description next_cursor dari halaman sebelumnya (opaque) */
+                /** @description next_cursor from the previous page (opaque) */
                 cursor?: string;
-                /** @description Jendela waktu dalam hari. Maksimal 90 karena indeks dihitung sinkron per request; di produksi perhitungan dipindah ke worker/materialized view harian. */
+                /** @description Time window in days. Capped at 90 because the index is computed synchronously per request; in production the computation moves to a worker or a daily materialized view. */
                 days?: number;
                 party_id?: string;
             };
@@ -4989,7 +4995,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Satu halaman distributor, alert dan rasio tertinggi dulu */
+            /** @description One page of distributors, alerts and highest ratios first */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4998,7 +5004,7 @@ export interface operations {
                     "application/json": components["schemas"]["CCLeakageResponse"];
                 };
             };
-            /** @description Belum masuk */
+            /** @description Not logged in */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -5007,7 +5013,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Tanpa permission, atau filter lokasi di luar scope */
+            /** @description Missing permission, or a location filter outside scope */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -5016,7 +5022,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description Query param tidak valid (limit, cursor, filter) */
+            /** @description Invalid query parameter (limit, cursor, filter) */
             422: {
                 headers: {
                     [name: string]: unknown;

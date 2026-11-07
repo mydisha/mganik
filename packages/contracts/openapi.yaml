@@ -3,16 +3,18 @@ info:
   title: mGanik API
   version: 0.1.0
   description: >
-    Kontrak API backend mGanik. Sumber tunggal untuk tipe frontend
-    (openapi-typescript). Error memakai application/problem+json (RFC 9457).
+    mGanik backend API contract. Single source for the frontend types
+    (openapi-typescript). Errors use application/problem+json (RFC 9457);
+    `title`, `detail`, and `errors[].message` are user-facing Indonesian text,
+    `code` is the stable machine-readable value.
 paths:
   /healthz:
     get:
       operationId: getLive
-      summary: Liveness, menjawab selama proses hidup
+      summary: "Liveness: returns 200 while the API process is running"
       responses:
         "200":
-          description: Proses hidup
+          description: Process is running
           content:
             application/json:
               schema:
@@ -20,16 +22,16 @@ paths:
   /readyz:
     get:
       operationId: getReady
-      summary: Readiness, database terhubung dan migrasi sudah diterapkan
+      summary: "Readiness: database reachable and migrations applied"
       responses:
         "200":
-          description: Siap menerima request
+          description: Ready to serve requests
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReadyResponse"
         "503":
-          description: Belum siap
+          description: database_unavailable or schema_not_ready
           content:
             application/problem+json:
               schema:
@@ -42,14 +44,15 @@ paths:
   /api/v1/auth/login:
     post:
       operationId: login
-      summary: Login staff dengan email + password
+      summary: Staff login with email and password
       description: >
-        Sukses memasang cookie `__Host-session` (HttpOnly, Secure, SameSite=Lax,
-        idle 8 jam, absolut 12 jam) dan mengembalikan profil seperti /auth/me.
-        Gagal memakai pesan generik yang sama untuk email tidak dikenal maupun
-        password salah. Percobaan dibatasi per email (5) dan per IP (20) dalam
-        15 menit; jatah dipesan sebelum password diverifikasi, jadi request
-        paralel tidak bisa melewatinya. Login sukses tidak memakan jatah IP.
+        On success, sets the `__Host-session` cookie (HttpOnly, Secure,
+        SameSite=Lax, 8 h idle, 12 h absolute) and returns the same profile as
+        /auth/me. Failures use one generic message for both an unknown email and
+        a wrong password. Attempts are limited per email (5) and per IP (20)
+        within 15 minutes; the quota is reserved before the password is
+        verified, so parallel requests cannot bypass it. A successful login does
+        not consume IP quota.
       tags: [auth]
       requestBody:
         required: true
@@ -59,7 +62,7 @@ paths:
               $ref: "#/components/schemas/LoginRequest"
       responses:
         "200":
-          description: Login berhasil
+          description: Logged in
           headers:
             Set-Cookie:
               description: "__Host-session=<token>; Path=/; Max-Age=43200; HttpOnly; Secure; SameSite=Lax"
@@ -70,40 +73,40 @@ paths:
               schema:
                 $ref: "#/components/schemas/MeResponse"
         "400":
-          description: Lihat field code (problem+json)
+          description: invalid_request (body is not valid JSON or has unknown fields)
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "401":
-          description: invalid_credentials (email atau password salah)
+          description: invalid_credentials (wrong email or password)
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "403":
-          description: account_disabled, atau csrf_rejected
+          description: account_disabled or csrf_rejected
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "415":
-          description: Lihat field code (problem+json)
+          description: unsupported_media_type (Content-Type must be application/json)
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "422":
-          description: Lihat field code (problem+json)
+          description: validation_failed; per-field messages in errors[]
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "429":
-          description: too_many_attempts; detail memuat menit tunggu
+          description: too_many_attempts; detail states how many minutes to wait
           headers:
             Retry-After:
-              description: Detik sampai boleh mencoba lagi
+              description: Seconds until the client may retry
               schema:
                 type: integer
           content:
@@ -111,10 +114,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
         "503":
-          description: server_busy (verifikasi password bersamaan penuh); coba lagi
+          description: server_busy (concurrent password verification slots are full); retry
           headers:
             Retry-After:
-              description: Detik sampai boleh mencoba lagi
+              description: Seconds until the client may retry
               schema:
                 type: integer
           content:
@@ -124,23 +127,23 @@ paths:
   /api/v1/auth/logout:
     post:
       operationId: logout
-      summary: Mencabut sesi staff dan menghapus cookie
-      description: Idempotent; selalu 204 walau sesi sudah kedaluwarsa atau tidak ada.
+      summary: Revoke the staff session and clear the cookie
+      description: Idempotent; always 204, even when the session has expired or does not exist.
       tags: [auth]
       security:
         - sessionCookie: []
         - {}
       responses:
         "204":
-          description: Sesi dicabut (kalau ada) dan cookie dihapus
+          description: Session revoked (if any) and cookie cleared
         "403":
-          description: Lihat field code (problem+json)
+          description: csrf_rejected (cross-site request)
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "415":
-          description: Lihat field code (problem+json)
+          description: unsupported_media_type (Content-Type must be application/json)
           content:
             application/problem+json:
               schema:
@@ -148,25 +151,25 @@ paths:
   /api/v1/auth/me:
     get:
       operationId: getMe
-      summary: Profil staff yang sedang login, role, permission, dan scope lokasi
+      summary: Current staff profile with roles, permissions, and location scope
       tags: [auth]
       security:
         - sessionCookie: []
       responses:
         "200":
-          description: Profil
+          description: Profile
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/MeResponse"
         "401":
-          description: unauthenticated atau session_expired
+          description: unauthenticated or session_expired
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "403":
-          description: Pemanggil bukan staff (mis. token device)
+          description: forbidden; caller is not staff (e.g. a POS device token)
           content:
             application/problem+json:
               schema:
@@ -174,12 +177,13 @@ paths:
   /api/v1/public/otp/request:
     post:
       operationId: requestConsumerOtp
-      summary: Minta kode OTP login konsumen (mock)
+      summary: Request a consumer login OTP (mock)
       description: >
-        Nomor dinormalkan ke E.164 Indonesia (+628...). Prototype memakai kode
-        OTP tetap (OTP_MOCK_CODE) yang tidak pernah dikembalikan di respons;
-        dimatikan (503 otp_unavailable) di production tanpa izin demo. Dibatasi
-        5 permintaan per nomor dan 20 per IP dalam 15 menit.
+        The number is normalized to Indonesian E.164 (+628...). The prototype
+        uses a fixed OTP (OTP_MOCK_CODE) that is never returned in the response;
+        it is disabled (503 otp_unavailable) in production without the demo
+        override. Limited to 5 requests per number and 20 per IP within 15
+        minutes.
       tags: [consumer]
       requestBody:
         required: true
@@ -189,34 +193,34 @@ paths:
               $ref: "#/components/schemas/OtpRequest"
       responses:
         "202":
-          description: Kode dikirim (respons sama untuk nomor baru maupun lama)
+          description: Code sent (same response for new and existing numbers)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/OtpRequestResponse"
         "403":
-          description: Lihat field code (problem+json)
+          description: csrf_rejected (cross-site request)
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "415":
-          description: Lihat field code (problem+json)
+          description: unsupported_media_type (Content-Type must be application/json)
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "422":
-          description: Lihat field code (problem+json)
+          description: validation_failed; per-field messages in errors[]
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "429":
-          description: too_many_attempts; detail memuat menit tunggu
+          description: too_many_attempts; detail states how many minutes to wait
           headers:
             Retry-After:
-              description: Detik sampai boleh mencoba lagi
+              description: Seconds until the client may retry
               schema:
                 type: integer
           content:
@@ -224,7 +228,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
         "503":
-          description: Lihat field code (problem+json)
+          description: otp_unavailable (consumer login is disabled on this server)
           content:
             application/problem+json:
               schema:
@@ -232,11 +236,12 @@ paths:
   /api/v1/public/otp/verify:
     post:
       operationId: verifyConsumerOtp
-      summary: Verifikasi OTP dan buat sesi konsumen
+      summary: Verify the OTP and create a consumer session
       description: >
-        Sukses memasang cookie `__Host-consumer` (idle 24 jam, absolut 7 hari).
-        Maksimal 5 percobaan per kode; setelah itu minta kode baru. Cookie
-        konsumen lama (bila ada) dicabut dan diganti.
+        On success, sets the `__Host-consumer` cookie (24 h idle, 7 days
+        absolute). At most 5 attempts per code; after that the API returns 429
+        too_many_attempts and the consumer must request a new code. An existing
+        consumer cookie, if any, is revoked and replaced.
       tags: [consumer]
       security:
         - consumerCookie: []
@@ -249,7 +254,7 @@ paths:
               $ref: "#/components/schemas/OtpVerifyRequest"
       responses:
         "200":
-          description: Login konsumen berhasil
+          description: Consumer logged in
           headers:
             Set-Cookie:
               description: "__Host-consumer=<token>; Path=/; Max-Age=604800; HttpOnly; Secure; SameSite=Lax"
@@ -260,34 +265,37 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConsumerMeResponse"
         "401":
-          description: otp_invalid (kode salah atau kedaluwarsa)
+          description: otp_invalid (wrong or expired code)
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "403":
-          description: consumer_blocked atau csrf_rejected
+          description: consumer_blocked or csrf_rejected
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "415":
-          description: Lihat field code (problem+json)
+          description: unsupported_media_type (Content-Type must be application/json)
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "422":
-          description: Lihat field code (problem+json)
+          description: validation_failed; per-field messages in errors[]
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "429":
-          description: too_many_attempts; detail memuat menit tunggu
+          description: >
+            too_many_attempts. Per-IP quota used up: detail states how many
+            minutes to wait. Per-code quota used up: detail tells the consumer to
+            request a new code.
           headers:
             Retry-After:
-              description: Detik sampai boleh mencoba lagi
+              description: Seconds until the client may retry
               schema:
                 type: integer
           content:
@@ -295,7 +303,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
         "503":
-          description: Lihat field code (problem+json)
+          description: otp_unavailable (consumer login is disabled on this server)
           content:
             application/problem+json:
               schema:
@@ -303,20 +311,20 @@ paths:
   /api/v1/public/consumer/me:
     get:
       operationId: getConsumerMe
-      summary: Konsumen yang sedang login (nomor disamarkan)
-      description: Butuh cookie `__Host-consumer` dari /public/otp/verify.
+      summary: Current consumer (masked phone number)
+      description: Requires the `__Host-consumer` cookie from /public/otp/verify.
       tags: [consumer]
       security:
         - consumerCookie: []
       responses:
         "200":
-          description: Profil konsumen
+          description: Consumer profile
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConsumerMeResponse"
         "401":
-          description: Lihat field code (problem+json)
+          description: unauthenticated or session_expired
           content:
             application/problem+json:
               schema:
@@ -324,23 +332,23 @@ paths:
   /api/v1/public/consumer/logout:
     post:
       operationId: logoutConsumer
-      summary: Mencabut sesi konsumen dan menghapus cookie
-      description: Idempotent; memakai cookie `__Host-consumer` bila ada.
+      summary: Revoke the consumer session and clear the cookie
+      description: Idempotent; uses the `__Host-consumer` cookie when present.
       tags: [consumer]
       security:
         - consumerCookie: []
         - {}
       responses:
         "204":
-          description: Sesi dicabut (kalau ada) dan cookie dihapus
+          description: Session revoked (if any) and cookie cleared
         "403":
-          description: Lihat field code (problem+json)
+          description: csrf_rejected (cross-site request)
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "415":
-          description: Lihat field code (problem+json)
+          description: unsupported_media_type (Content-Type must be application/json)
           content:
             application/problem+json:
               schema:
@@ -351,10 +359,11 @@ paths:
   /api/v1/code-batches:
     post:
       operationId: mintCodes
-      summary: Mint kode serial acak 80-bit (dan PIN klaim untuk UNIT) untuk satu job cetak
+      summary: Mint random 80-bit serial codes (plus claim PINs for UNIT) for one print job
       description: >
-        Permission code.mint. Kode dan PIN plaintext hanya dikembalikan sekali di
-        respons ini sebagai bahan file cetak; DB hanya menyimpan HMAC PIN.
+        Permission code.mint. Plaintext codes and PINs are returned only once, in
+        this response, as input for the print file; the database stores only the
+        PIN HMAC.
       security: [{ sessionCookie: [] }]
       requestBody:
         required: true
@@ -364,7 +373,7 @@ paths:
               $ref: "#/components/schemas/MintCodesRequest"
       responses:
         "201":
-          description: Job cetak dibuat
+          description: Print job created
           content:
             application/json:
               schema:
@@ -372,7 +381,7 @@ paths:
         # Anchor YAML dipakai ulang semua respons error di bagian ini
         # (components.responses berada di luar marker bagian ini).
         "400": &serialProblem
-          description: Error domain (application/problem+json, kode di field code)
+          description: Domain error (problem+json); see the code field
           content:
             application/problem+json:
               schema:
@@ -383,7 +392,7 @@ paths:
   /api/v1/serials/commission:
     post:
       operationId: commissionSerials
-      summary: Ikat label GENERATED ke batch produksi (→ COMMISSIONED)
+      summary: Bind GENERATED labels to a production batch (→ COMMISSIONED)
       security: [{ sessionCookie: [] }]
       requestBody:
         required: true
@@ -393,7 +402,7 @@ paths:
               $ref: "#/components/schemas/CommissionRequest"
       responses:
         "200":
-          description: Label di-commission
+          description: Labels commissioned
           content:
             application/json:
               schema:
@@ -406,7 +415,7 @@ paths:
   /api/v1/serials/receive:
     post:
       operationId: receiveSerials
-      summary: Terima hasil produksi (COMMISSIONED → IN_STOCK) ke lokasi sendiri, beserta turunannya
+      summary: Receive production output (COMMISSIONED → IN_STOCK) into an own location, including descendants
       security: [{ sessionCookie: [] }]
       requestBody:
         required: true
@@ -416,7 +425,7 @@ paths:
               $ref: "#/components/schemas/ReceiveSerialsRequest"
       responses:
         "200":
-          description: Serial diterima
+          description: Serials received
           content:
             application/json:
               schema:
@@ -429,11 +438,11 @@ paths:
   /api/v1/serials/aggregate:
     post:
       operationId: aggregateSerials
-      summary: Masukkan unit ke karton atau karton ke palet
+      summary: Pack units into a carton or cartons into a pallet
       description: >
-        Validasi rank level, spesifikasi kemasan, kapasitas, produk, aturan
-        campuran batch, anak belum punya induk, tanpa siklus. Anak yang sudah
-        ada di induk yang sama dilewati (aman di-retry).
+        Validates level rank, packaging spec, capacity, product, the mixed-batch
+        rule, that children have no parent yet, and that there is no cycle.
+        Children already in the same parent are skipped (safe to retry).
       security: [{ sessionCookie: [] }]
       requestBody:
         required: true
@@ -443,7 +452,7 @@ paths:
               $ref: "#/components/schemas/AggregateRequest"
       responses:
         "200":
-          description: Agregasi berhasil
+          description: Packed
           content:
             application/json:
               schema:
@@ -456,19 +465,19 @@ paths:
   /api/v1/serials/{code}/unpack:
     post:
       operationId: unpackSerial
-      summary: Bongkar kemasan (keluarkan semua anak langsung)
+      summary: Unpack a container (remove all direct children)
       security: [{ sessionCookie: [] }]
       parameters:
         - &serialCodeParam
           name: code
           in: path
           required: true
-          description: Kode serial 16 karakter Crockford Base32 (huruf kecil/tanda hubung dinormalkan)
+          description: 16-character Crockford Base32 serial code (lowercase and hyphens are normalized)
           schema:
             type: string
       responses:
         "200":
-          description: Kemasan dibongkar
+          description: Container unpacked
           content:
             application/json:
               schema:
@@ -480,16 +489,16 @@ paths:
   /api/v1/serials/{code}/trace:
     get:
       operationId: traceSerial
-      summary: Genealogi serial (leluhur, turunan, event, shipment, custodian, scan)
+      summary: Serial genealogy (ancestors, descendants, events, shipments, custodian, scans)
       description: >
-        Shipment diambil dari riwayat event (unit dan karton/palet yang pernah
-        membungkusnya), jadi tetap terlihat setelah kemasan dibongkar.
+        Shipments come from the event history (the unit and every carton or
+        pallet that ever contained it), so they stay visible after unpacking.
       security: [{ sessionCookie: [] }]
       parameters:
         - *serialCodeParam
       responses:
         "200":
-          description: Genealogi serial
+          description: Serial genealogy
           content:
             application/json:
               schema:
@@ -500,7 +509,7 @@ paths:
   /api/v1/batches/{id}/recall:
     post:
       operationId: recallBatch
-      summary: Recall batch; unit di rantai pasok → QUARANTINED massal (idempotent)
+      summary: Recall a batch; units in the supply chain move to QUARANTINED in bulk (idempotent)
       security: [{ sessionCookie: [] }]
       parameters:
         - &serialIdParam
@@ -518,7 +527,7 @@ paths:
               $ref: "#/components/schemas/RecallRequest"
       responses:
         "200":
-          description: Batch di-recall
+          description: Batch recalled
           content:
             application/json:
               schema:
@@ -530,7 +539,7 @@ paths:
   /api/v1/shipments:
     post:
       operationId: createSerialShipment
-      summary: Kirim palet/karton/unit; status dan custodian seluruh turunan berpindah dalam satu statement
+      summary: Ship pallets, cartons, or units; status and custodian of every descendant move in one statement
       security: [{ sessionCookie: [] }]
       requestBody:
         required: true
@@ -540,7 +549,7 @@ paths:
               $ref: "#/components/schemas/SerialShipmentCreateRequest"
       responses:
         "201":
-          description: Shipment dikirim
+          description: Shipment dispatched
           content:
             application/json:
               schema:
@@ -553,13 +562,13 @@ paths:
   /api/v1/shipments/{id}/receive:
     post:
       operationId: receiveSerialShipment
-      summary: Terima shipment (→ AT_PARTNER di lokasi mitra, IN_STOCK di lokasi sendiri; idempotent)
+      summary: Receive a shipment (→ AT_PARTNER at a partner location, IN_STOCK at an own location; idempotent)
       security: [{ sessionCookie: [] }]
       parameters:
         - *serialIdParam
       responses:
         "200":
-          description: Shipment diterima (atau sudah diterima sebelumnya)
+          description: Shipment received (or already received earlier)
           content:
             application/json:
               schema:
@@ -571,13 +580,13 @@ paths:
   /api/v1/loyalty/claims/{id}/review:
     post:
       operationId: reviewLoyaltyClaim
-      summary: Review klaim poin (APPROVE/REJECT untuk PENDING, REVERSE untuk APPROVED)
+      summary: Review a points claim (APPROVE/REJECT for PENDING, REVERSE for APPROVED)
       description: >
-        REJECT dan REVERSE (clawback, note wajib) membalik poin lewat ledger
-        REVERSE yang idempotent, membebaskan unit untuk pembeli asli, dan
-        mengembalikan serial ke status asalnya (SOLD/AT_PARTNER). Keputusan sama
-        yang dikirim ulang idempotent; keputusan lain untuk klaim yang sudah
-        diputuskan 409 claim_already_decided.
+        REJECT and REVERSE (clawback, note required) reverse the points through
+        an idempotent REVERSE ledger entry, free the unit for the real buyer,
+        and return the serial to its previous status (SOLD or AT_PARTNER).
+        Resending the same decision is idempotent; a different decision on an
+        already decided claim returns 409 claim_already_decided.
       security: [{ sessionCookie: [] }]
       parameters:
         - *serialIdParam
@@ -589,7 +598,7 @@ paths:
               $ref: "#/components/schemas/ReviewClaimRequest"
       responses:
         "200":
-          description: Keputusan tersimpan
+          description: Decision saved
           content:
             application/json:
               schema:
@@ -602,12 +611,13 @@ paths:
   /api/v1/public/verify:
     post:
       operationId: verifySerial
-      summary: Verifikasi keaslian produk (publik, tanpa login)
+      summary: Verify product authenticity (public, no login)
       description: >
-        Rate limit per IP (IPv4 per alamat, IPv6 per /64; 429 + Retry-After).
-        Server memasang cookie anonim mg_vid untuk fingerprint scan. Respons
-        tidak memuat status internal serial; kode berformat salah langsung
-        NOT_FOUND (tetap direkam untuk hotspot pemalsuan).
+        Rate limited per IP (IPv4 per address, IPv6 per /64; 429 with
+        Retry-After). The server sets an anonymous mg_vid cookie to fingerprint
+        scans. The response never includes the internal serial status; a
+        malformed code returns NOT_FOUND right away (still recorded for
+        counterfeit hotspots).
       security: []
       requestBody:
         required: true
@@ -617,7 +627,7 @@ paths:
               $ref: "#/components/schemas/PublicVerifyRequest"
       responses:
         "200":
-          description: Hasil verifikasi
+          description: Verification result
           content:
             application/json:
               schema:
@@ -628,14 +638,14 @@ paths:
   /api/v1/public/claims:
     post:
       operationId: claimLoyaltyPoints
-      summary: Klaim poin dengan PIN di dalam kemasan (sesi konsumen)
+      summary: Claim points with the PIN inside the package (consumer session)
       description: >
-        423 claim_locked setelah 5 PIN salah per unit; 409 already_claimed atau
-        claim_not_allowed (unit belum terjual); 403 claim_previously_rejected
-        kalau klaim akun ini untuk unit itu pernah ditolak/dibalik; 422
-        duplicate_code tidak berlaku (satu kode). Rate limit per IP dan per
-        akun (429). Klaim ulang oleh akun yang sama mengembalikan klaim lama
-        dengan status 200 (replayed=true).
+        423 claim_locked after 5 wrong PINs per unit; 409 already_claimed or
+        claim_not_allowed (unit not sold yet); 403 claim_previously_rejected when
+        this account's claim for the unit was rejected or reversed before; 422
+        duplicate_code does not apply (single code). Rate limited per IP and per
+        account (429). A repeat claim by the same account returns the existing
+        claim with status 200 (replayed=true).
       security: [{ sessionCookie: [] }]
       requestBody:
         required: true
@@ -645,13 +655,13 @@ paths:
               $ref: "#/components/schemas/LoyaltyClaimRequest"
       responses:
         "200":
-          description: Klaim yang sama dikirim ulang
+          description: Same claim sent again
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/LoyaltyClaimResponse"
         "201":
-          description: Klaim tercatat
+          description: Claim recorded
           content:
             application/json:
               schema:
@@ -665,11 +675,11 @@ paths:
   /api/v1/public/loyalty/balance:
     get:
       operationId: getLoyaltyBalance
-      summary: Saldo poin konsumen (tersedia vs masih tertahan masa tunggu/review)
+      summary: Consumer points balance (available vs held for the waiting period or review)
       security: [{ sessionCookie: [] }]
       responses:
         "200":
-          description: Saldo poin
+          description: Points balance
           content:
             application/json:
               schema:
@@ -689,12 +699,12 @@ paths:
   /api/v1/inventory/balances:
     get:
       operationId: listInventoryBalances
-      summary: Saldo stok per (lokasi, produk) dengan ATP online
+      summary: Stock balance per (location, product) with online ATP
       description: >
-        Pagination keyset (location_id, product_id) lewat cursor opaque.
-        Principal ber-scope SELECTED hanya melihat lokasinya. online_atp =
-        available − online_buffer_qty, dan 0 kalau POS lokasi OFFLINE.
-        Permission inventory.read.
+        Keyset pagination on (location_id, product_id) through an opaque
+        cursor. A principal with SELECTED scope only sees its own locations.
+        online_atp = available − online_buffer_qty, and 0 when the location's
+        POS is OFFLINE. Permission inventory.read.
       tags: [inventory]
       security: [{ sessionCookie: [] }]
       parameters:
@@ -704,14 +714,14 @@ paths:
         - { name: cursor, in: query, schema: { type: string, maxLength: 512 } }
       responses:
         "200":
-          description: Satu halaman saldo
+          description: One page of balances
           content:
             application/json:
               schema: { $ref: "#/components/schemas/InventoryBalancePage" }
         # Anchor YAML dipakai ulang di seluruh bagian [inventory] (marker hanya
         # mengizinkan path & schema, bukan components.responses/parameters).
         "401": &invProblem
-          description: Error domain (problem+json, lihat field code)
+          description: Domain error (problem+json); see the code field
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
@@ -720,11 +730,11 @@ paths:
   /api/v1/inventory/adjustments:
     post:
       operationId: createInventoryAdjustment
-      summary: Stock opname (ADJUST_COUNT ±) dengan alasan wajib, diaudit
+      summary: Stock count adjustment (ADJUST_COUNT ±) with a required reason, audited
       description: >
-        Idempotency-Key yang sama dengan isi sama = 200 duplicate (tanpa mutasi
-        baru); isi berbeda = 422 idempotency_key_reused. Mengurangi melebihi
-        available = 409 insufficient_stock. Permission inventory.adjust.
+        Same Idempotency-Key with the same body = 200 duplicate (no new
+        movement); a different body = 422 idempotency_key_reused. Reducing more
+        than available = 409 insufficient_stock. Permission inventory.adjust.
       tags: [inventory]
       security: [{ sessionCookie: [] }]
       parameters:
@@ -732,7 +742,7 @@ paths:
           name: Idempotency-Key
           in: header
           required: true
-          description: Kunci idempotensi dari klien (1-255 karakter ASCII terlihat)
+          description: Client idempotency key (1-255 visible ASCII characters)
           schema: { type: string, minLength: 1, maxLength: 255 }
       requestBody:
         required: true
@@ -741,12 +751,12 @@ paths:
             schema: { $ref: "#/components/schemas/InventoryAdjustmentRequest" }
       responses:
         "201":
-          description: Mutasi dicatat
+          description: Movement recorded
           content:
             application/json:
               schema: { $ref: "#/components/schemas/InventoryStockChangeResponse" }
         "200":
-          description: Replay Idempotency-Key (duplicate=true)
+          description: Idempotency-Key replay (duplicate=true)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/InventoryStockChangeResponse" }
@@ -758,8 +768,8 @@ paths:
   /api/v1/inventory/quarantine:
     post:
       operationId: moveInventoryQuarantine
-      summary: Pindah stok ke karantina (IN) atau rilis (OUT), diaudit
-      description: Permission inventory.quarantine. Semantik Idempotency-Key sama dengan adjustment.
+      summary: Move stock into quarantine (IN) or release it (OUT), audited
+      description: Permission inventory.quarantine. Idempotency-Key semantics match adjustments.
       tags: [inventory]
       security: [{ sessionCookie: [] }]
       parameters:
@@ -771,12 +781,12 @@ paths:
             schema: { $ref: "#/components/schemas/InventoryQuarantineRequest" }
       responses:
         "201":
-          description: Mutasi dicatat
+          description: Movement recorded
           content:
             application/json:
               schema: { $ref: "#/components/schemas/InventoryStockChangeResponse" }
         "200":
-          description: Replay Idempotency-Key (duplicate=true)
+          description: Idempotency-Key replay (duplicate=true)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/InventoryStockChangeResponse" }
@@ -788,16 +798,17 @@ paths:
   /api/v1/orders:
     post:
       operationId: createOrder
-      summary: Buat order D2C dan pesan stok (PENDING_PAYMENT)
+      summary: Create a D2C order and reserve stock (PENDING_PAYMENT)
       description: >
-        Harga dari price list channel. Seluruh line dipesan di SATU lokasi
-        (gudang pusat dulu, lalu lokasi lain yang online_fulfillment_enabled),
-        all-or-nothing, dengan batas bayar RESERVATION_TTL. Idempotency-Key
-        wajib: replay = respons identik + header Idempotent-Replayed: true,
-        isi berbeda = 422 idempotency_key_reused, masih diproses = 409
-        idempotency_in_progress. Stok tidak cukup = 409 out_of_stock dengan
-        errors[] per line (field lines[i].qty, code insufficient_stock atau
-        not_at_single_location). Permission order.create.
+        Prices come from the channel price list. All lines are reserved at one
+        location (central warehouse first, then other locations with
+        online_fulfillment_enabled), all-or-nothing, with a RESERVATION_TTL
+        payment deadline. Idempotency-Key is required: replay = identical
+        response plus header Idempotent-Replayed: true, different body = 422
+        idempotency_key_reused, still processing = 409 idempotency_in_progress.
+        Insufficient stock = 409 out_of_stock with errors[] per line (field
+        lines[i].qty, code insufficient_stock or not_at_single_location).
+        Permission order.create.
       tags: [orders]
       security: [{ sessionCookie: [] }]
       parameters:
@@ -809,10 +820,10 @@ paths:
             schema: { $ref: "#/components/schemas/OrderCreateRequest" }
       responses:
         "201":
-          description: Order dibuat (atau replay)
+          description: Order created (or replayed)
           headers:
             Idempotent-Replayed:
-              description: "true kalau respons adalah replay"
+              description: "true when the response is a replay"
               schema: { type: string }
           content:
             application/json:
@@ -825,8 +836,8 @@ paths:
   /api/v1/orders/{id}:
     get:
       operationId: getOrder
-      summary: Order lengkap (line, reservasi, riwayat status, pembayaran)
-      description: Permission order.read; principal SELECTED hanya order dari lokasinya.
+      summary: Full order (lines, reservations, status history, payments)
+      description: Permission order.read; a SELECTED principal only sees orders from its locations.
       tags: [orders]
       security: [{ sessionCookie: [] }]
       parameters:
@@ -847,11 +858,11 @@ paths:
   /api/v1/orders/{id}/cancel:
     post:
       operationId: cancelOrder
-      summary: Batalkan order dan lepas reservasinya
+      summary: Cancel an order and release its reservations
       description: >
-        Dari PENDING_PAYMENT, PAID, atau NEEDS_ACTION. Order yang sudah dibayar
-        ditandai metadata.refund_required. Membatalkan order CANCELLED = 200
-        apa adanya. Permission order.cancel.
+        Allowed from PENDING_PAYMENT, PAID, or NEEDS_ACTION. A paid order is
+        flagged with metadata.refund_required. Cancelling a CANCELLED order
+        returns 200 unchanged. Permission order.cancel.
       tags: [orders]
       security: [{ sessionCookie: [] }]
       parameters:
@@ -863,7 +874,7 @@ paths:
             schema: { $ref: "#/components/schemas/OrderCancelRequest" }
       responses:
         "200":
-          description: Order sesudah dibatalkan
+          description: Order after cancellation
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Order" }
@@ -875,11 +886,12 @@ paths:
   /api/v1/orders/{id}/fulfill:
     post:
       operationId: fulfillOrder
-      summary: Penuhi order PAID (COMMIT_SALE, PAID → FULFILLING → SHIPPED)
+      summary: Fulfill a PAID order (COMMIT_SALE, PAID → FULFILLING → SHIPPED)
       description: >
-        Body opsional: serial unit per line dicatat di order_line_serials (satu
-        unit hanya terjual sekali = 409 serial_already_sold). Order SHIPPED =
-        200 apa adanya. Permission order.fulfill + semua lokasi reservasi di scope.
+        Optional body: unit serials per line are recorded in order_line_serials
+        (a unit can be sold only once, otherwise 409 serial_already_sold). A
+        SHIPPED order returns 200 unchanged. Requires permission order.fulfill
+        and every reservation location in scope.
       tags: [orders]
       security: [{ sessionCookie: [] }]
       parameters:
@@ -891,7 +903,7 @@ paths:
             schema: { $ref: "#/components/schemas/OrderFulfillRequest" }
       responses:
         "200":
-          description: Order sesudah dikirim
+          description: Order after shipping
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Order" }
@@ -903,12 +915,11 @@ paths:
   /api/v1/webhooks/payments/mock:
     post:
       operationId: paymentWebhookMock
-      summary: Webhook pembayaran mock (signature HMAC, idempotent per provider_ref)
+      summary: Mock payment webhook (HMAC signature, idempotent per provider_ref)
       description: >
-        Nominal dan mata uang harus sama dengan total order. PENDING_PAYMENT →
-        PAID. Bayar telat (EXPIRED): stok dipesan ulang → PAID, atau
-        NEEDS_ACTION + refund kalau stok habis. Kiriman ulang = 200
-        ALREADY_PROCESSED.
+        Amount and currency must equal the order total. PENDING_PAYMENT → PAID.
+        Late payment (EXPIRED): stock is reserved again → PAID, or NEEDS_ACTION
+        plus refund when stock is gone. A resend returns 200 ALREADY_PROCESSED.
       tags: [payments]
       security: []
       parameters:
@@ -916,7 +927,7 @@ paths:
           name: X-Mganik-Timestamp
           in: header
           required: true
-          description: Unix detik; harus dalam ±5 menit dari jam server (401 stale_timestamp)
+          description: Unix seconds; must be within ±5 minutes of server time (401 stale_timestamp)
           schema: { type: string, pattern: "^[0-9]+$" }
         - &invWebhookSignature
           name: X-Mganik-Signature
@@ -931,7 +942,7 @@ paths:
             schema: { $ref: "#/components/schemas/PaymentWebhookRequest" }
       responses:
         "200":
-          description: Event diproses (atau duplikat)
+          description: Event processed (or duplicate)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PaymentWebhookResponse" }
@@ -943,12 +954,12 @@ paths:
   /api/v1/channels/marketplace/orders:
     post:
       operationId: importMarketplaceOrder
-      summary: Impor order marketplace yang sudah dibayar (signature HMAC)
+      summary: Import a paid marketplace order (HMAC signature)
       description: >
-        Dedupe per (channel_code, external_ref): impor ulang dengan isi sama =
-        200 duplicate dengan order yang sama; isi berbeda = 409
-        external_ref_conflict. Order langsung PAID; stok tidak cukup → order
-        tetap dibuat lalu NEEDS_ACTION (tidak ditolak).
+        Deduplicated per (channel_code, external_ref): re-importing the same
+        body = 200 duplicate with the same order; a different body = 409
+        external_ref_conflict. The order starts as PAID; with insufficient stock
+        the order is still created and moves to NEEDS_ACTION (not rejected).
       tags: [orders]
       security: []
       parameters:
@@ -961,12 +972,12 @@ paths:
             schema: { $ref: "#/components/schemas/MarketplaceOrderRequest" }
       responses:
         "201":
-          description: Order baru
+          description: New order
           content:
             application/json:
               schema: { $ref: "#/components/schemas/MarketplaceImportResponse" }
         "200":
-          description: Duplikat (order yang sudah ada)
+          description: Duplicate (existing order)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/MarketplaceImportResponse" }
@@ -985,17 +996,18 @@ paths:
   /api/v1/pos/devices:
     post:
       operationId: provisionPosDevice
-      summary: Provisioning device POS (token + signing key, hanya sekali)
+      summary: Provision a POS device (token and signing key, returned once)
       description: >
-        Permission pos.device.manage di lokasi tujuan (scope per permission).
-        Lokasi wajib toko sendiri (OWN_STORE) yang aktif, selain itu 422
-        location_not_store / location_not_found. Token bearer dan signing key
-        acak 256 bit HANYA dikembalikan di respons ini (Cache-Control:
-        no-store); server menyimpan SHA-256 token dan signing key terenkripsi
-        AES-256-GCM (subkey HKDF dari PII_ENC_KEY, AAD = id device). Tidak ada
-        replay Idempotency-Key (replay berarti menyimpan token polos): retry
-        yang membuat device ganda diselesaikan dengan mencabut device lebih.
-        Toko NOT_TRACKED menjadi OFFLINE sampai heartbeat pertama. Diaudit.
+        Permission pos.device.manage at the target location (scope per
+        permission). The location must be an active own store (OWN_STORE),
+        otherwise 422 location_not_store or location_not_found. The random
+        256-bit bearer token and signing key are returned ONLY in this response
+        (Cache-Control: no-store); the server stores the token's SHA-256 and the
+        signing key encrypted with AES-256-GCM (HKDF subkey of PII_ENC_KEY, AAD =
+        device id). There is no Idempotency-Key replay (a replay would mean
+        storing the plaintext token): a retry that creates a duplicate device is
+        resolved by revoking the extra device. A NOT_TRACKED store becomes
+        OFFLINE until its first heartbeat. Audited.
       tags: [pos]
       security: [{ sessionCookie: [] }]
       requestBody:
@@ -1005,7 +1017,7 @@ paths:
             schema: { $ref: "#/components/schemas/PosDeviceCreateRequest" }
       responses:
         "201":
-          description: Device dibuat; simpan token dan signing_key di device (tidak bisa diambil lagi)
+          description: Device created; store token and signing_key on the device (they cannot be retrieved again)
           headers:
             Cache-Control:
               description: no-store
@@ -1014,7 +1026,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/PosDeviceProvisioned" }
         "400": &posProblem
-          description: Error domain (problem+json, lihat field code)
+          description: Domain error (problem+json); see the code field
           content:
             application/problem+json:
               schema: { $ref: "#/components/schemas/Problem" }
@@ -1023,8 +1035,8 @@ paths:
         "422": *posProblem
     get:
       operationId: listPosDevices
-      summary: Daftar device POS di lokasi dalam scope pos.device.manage
-      description: Pagination keyset (created_at, id) terbaru dulu. Tidak pernah memuat token atau signing key.
+      summary: List POS devices at locations within pos.device.manage scope
+      description: Keyset pagination on (created_at, id), newest first. Never includes the token or signing key.
       tags: [pos]
       security: [{ sessionCookie: [] }]
       parameters:
@@ -1033,7 +1045,7 @@ paths:
         - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
       responses:
         "200":
-          description: Satu halaman device
+          description: One page of devices
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PosDevicePage" }
@@ -1043,16 +1055,16 @@ paths:
   /api/v1/pos/devices/{id}/revoke:
     post:
       operationId: revokePosDevice
-      summary: Cabut device POS (token langsung ditolak 401)
+      summary: Revoke a POS device (its token is rejected with 401 immediately)
       description: >
-        Permission pos.device.manage di lokasi device (di luar scope 403, tidak
-        ada 404). Mencabut device yang sudah dicabut mengembalikan keadaannya
-        (idempotent, tanpa audit kedua). Body opsional. Batasan: penjualan
-        offline yang belum tersinkron dari device yang sudah dicabut tidak
-        bisa masuk lewat /pos/sync (token 401); pemulihannya manual (ekspor
-        outbox/struk, dicatat ops setelah verifikasi). Pastikan heartbeat
-        terakhir device melaporkan pending_count 0 sebelum mencabut. Toko yang
-        tidak lagi punya device ACTIVE kembali NOT_TRACKED.
+        Permission pos.device.manage at the device's location (out of scope =
+        403, missing = 404). Revoking an already revoked device returns its
+        current state (idempotent, no second audit entry). Body optional.
+        Limitation: unsynced offline sales from a revoked device cannot come in
+        through /pos/sync (token 401); recovery is manual (export the outbox or
+        receipts, recorded by ops after verification). Make sure the device's
+        last heartbeat reported pending_count 0 before revoking. A store with no
+        ACTIVE device left returns to NOT_TRACKED.
       tags: [pos]
       security: [{ sessionCookie: [] }]
       parameters:
@@ -1064,7 +1076,7 @@ paths:
             schema: { $ref: "#/components/schemas/PosDeviceRevokeRequest" }
       responses:
         "200":
-          description: Device berstatus REVOKED
+          description: Device with status REVOKED
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PosDevice" }
@@ -1075,23 +1087,24 @@ paths:
   /api/v1/pos/bootstrap:
     get:
       operationId: getPosBootstrap
-      summary: Data referensi untuk operasi offline (device)
+      summary: Reference data for offline operation (device)
       description: >
-        Satu snapshot konsisten (REPEATABLE READ): katalog produk aktif, price
-        list POS yang berlaku + version (bawa sebagai price_list_version di
-        transaksi), snapshot stok lokasi, halaman pertama serial UNIT IN_STOCK
-        di lokasi (2.000 per halaman, lanjutkan dengan
-        /pos/bootstrap/serials?cursor=), kasir yang boleh login (user aktif
-        ber-scope pos.sync di lokasi ini dan sudah punya PIN) beserta
-        pos_pin_hash argon2id untuk login lokal, server_time, dan batas offline.
-        Trade-off: hash PIN di device bisa di-brute force offline kalau device
-        dicuri; dampaknya terbatas karena server tetap memeriksa token device
-        (bisa dicabut) dan cashier_id setiap transaksi. Cache-Control: no-store.
+        One consistent snapshot (REPEATABLE READ): active product catalog, the
+        current POS price list and its version (send it as price_list_version
+        in transactions), the location's stock snapshot, the first page of UNIT
+        IN_STOCK serials at the location (2,000 per page, continue with
+        /pos/bootstrap/serials?cursor=), cashiers allowed to log in (active
+        users with pos.sync scope at this location who have a PIN) with their
+        argon2id pos_pin_hash for local login, server_time, and offline limits.
+        Trade-off: PIN hashes on the device can be brute-forced offline if the
+        device is stolen; the impact is limited because the server still checks
+        the (revocable) device token and the cashier_id of every transaction.
+        Cache-Control: no-store.
       tags: [pos]
       security: [{ deviceToken: [] }]
       responses:
         "200":
-          description: Data bootstrap
+          description: Bootstrap data
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PosBootstrap" }
@@ -1100,14 +1113,14 @@ paths:
   /api/v1/pos/bootstrap/serials:
     get:
       operationId: listPosBootstrapSerials
-      summary: Halaman berikutnya serial UNIT IN_STOCK di lokasi device
+      summary: Next page of UNIT IN_STOCK serials at the device's location
       tags: [pos]
       security: [{ deviceToken: [] }]
       parameters:
         - { name: cursor, in: query, schema: { type: string, maxLength: 1024 } }
       responses:
         "200":
-          description: Satu halaman serial (urut kode)
+          description: One page of serials (ordered by code)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PosSerialPage" }
@@ -1117,18 +1130,19 @@ paths:
   /api/v1/pos/heartbeat:
     post:
       operationId: postPosHeartbeat
-      summary: Heartbeat device (disarankan setiap heartbeat_interval_seconds)
+      summary: Device heartbeat (recommended every heartbeat_interval_seconds)
       description: >
-        Selalu memperbarui pos_devices.last_seen_at. Toko baru dijadikan
-        ONLINE (locations.sync_state + last_heartbeat_at, monoton) kalau
-        pending_count = 0 DAN server tidak melihat gap seq device ini; selain
-        itu online_blocked_reason berisi pending_count_missing, pending_outbox,
-        atau missing_seqs dan toko tidak diperpanjang ONLINE. Alasannya:
-        selama penjualan offline belum tersinkron, stok toko di server belum
-        benar, jadi ATP online toko harus tetap 0. Urutan klien setelah
-        internet kembali: kirim outbox (/pos/sync) sampai habis, LALU heartbeat
-        dengan pending_count 0. Worker menandai lokasi OFFLINE kalau tidak ada
-        heartbeat "bersih" lebih dari heartbeat_timeout_seconds (default 120).
+        Always updates pos_devices.last_seen_at. The store only becomes ONLINE
+        (locations.sync_state and last_heartbeat_at, monotonic) when
+        pending_count = 0 and the server sees no seq gap for this device;
+        otherwise online_blocked_reason is pending_count_missing,
+        pending_outbox, or missing_seqs and the store's ONLINE state is not
+        extended. Reason: while offline sales are unsynced, the server's stock
+        for the store is wrong, so the store's online ATP must stay 0. Client
+        order after connectivity returns: drain the outbox (/pos/sync), then
+        send a heartbeat with pending_count 0. A worker marks the location
+        OFFLINE when there has been no "clean" heartbeat for longer than
+        heartbeat_timeout_seconds (default 120).
       tags: [pos]
       security: [{ deviceToken: [] }]
       requestBody:
@@ -1138,7 +1152,7 @@ paths:
             schema: { $ref: "#/components/schemas/PosHeartbeatRequest" }
       responses:
         "200":
-          description: Status setelah heartbeat
+          description: Status after the heartbeat
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PosHeartbeatResponse" }
@@ -1149,44 +1163,46 @@ paths:
   /api/v1/pos/sync:
     post:
       operationId: syncPosTransactions
-      summary: Rekonsiliasi transaksi offline POS (idempotent, per transaksi)
+      summary: Reconcile offline POS transactions (idempotent per transaction)
       description: |
-        Batch maksimal sync_max_batch (500) transaksi, body maksimal
-        sync_max_body_bytes (5 MiB). Transaksi diproses urut device_seq,
-        masing-masing di transaksi database sendiri; satu transaksi gagal tidak
-        menghentikan yang lain. Penjualan adalah fakta: TIDAK pernah ditolak
-        karena stok atau serial ("fakta menang atas janji").
+        At most sync_max_batch (500) transactions per batch and
+        sync_max_body_bytes (5 MiB) per body. Transactions are processed in
+        device_seq order, each in its own database transaction; one failure does
+        not stop the others. A sale is a fact: it is NEVER rejected because of
+        stock or serials ("facts beat promises").
 
-        **Identitas:** client_txn_id (UUID, disarankan v7) dan device_seq
-        (bilangan bulat 1..2^53-1, monoton per device, diambil dalam transaksi
-        IndexedDB). Item yang identitasnya tidak bisa dibaca dijawab REJECTED
-        invalid_payload TANPA disimpan (cocokkan lewat `results[].index`);
-        item lain tetap diproses. 400/422 untuk seluruh batch hanya kalau
-        struktur batch rusak atau lebih dari sync_max_batch. id/seq yang sama
-        dua kali di satu batch diperlakukan seperti pengiriman ulang.
+        **Identity:** client_txn_id (UUID, v7 recommended) and device_seq
+        (integer 1..2^53-1, monotonic per device, taken inside an IndexedDB
+        transaction). An item whose identity cannot be read is answered REJECTED
+        invalid_payload without being stored (match it through
+        `results[].index`); other items are still processed. 400/422 for the
+        whole batch only when the batch structure is broken or it exceeds
+        sync_max_batch. The same id/seq twice in one batch is treated as a
+        resend.
 
-        **Signature dicek sebelum apa pun disimpan.** Transaksi bersignature
-        salah (atau yang tidak bisa dikanonisasi) TIDAK disimpan dan tidak
-        menempati client_txn_id maupun device_seq: kirim ulang versi yang
-        ditandatangani benar tetap diterima. Signature salah dicatat sebagai
-        anomali POS_PAYLOAD_MISMATCH (satu per device per hari, hit_count).
+        **The signature is checked before anything is stored.** A transaction
+        with a wrong signature (or one that cannot be canonicalized) is not
+        stored and does not occupy its client_txn_id or device_seq: resending a
+        correctly signed version is still accepted. A wrong signature is
+        recorded as a POS_PAYLOAD_MISMATCH anomaly (one per device per day,
+        hit_count).
 
-        **Kanonisasi untuk signature dan payload_hash** (subset RFC 8785/JCS):
-        1. Ambil objek transaksi apa adanya, buang member tingkat atas
-           `signature`. Member lain (termasuk yang tidak dikenal) ikut
-           ditandatangani.
-        2. Urutkan key objek secara rekursif menurut unit kode UTF-16 (sama
-           dengan `Array.prototype.sort()` bawaan JS); key ganda ditolak.
-        3. Serialisasi tanpa spasi; string di-escape persis seperti
-           `JSON.stringify` (\" \\ \b \f \n \r \t, kontrol lain \u00xx huruf
-           kecil, karakter lain termasuk non-ASCII ditulis apa adanya dalam
-           UTF-8); urutan array dipertahankan.
-        4. Angka hanya bilangan bulat |n| <= 2^53-1 (uang dalam rupiah utuh),
-           tanpa pecahan/eksponen. Surrogate UTF-16 tunggal ditulis \udxxx
-           seperti JSON.stringify (signature tetap terverifikasi), tetapi
-           transaksinya REJECTED invalid_payload (disimpan, tanpa anomali).
+        **Canonicalization for signature and payload_hash** (subset of RFC
+        8785/JCS):
+        1. Take the transaction object as is and drop the top-level `signature`
+           member. Every other member (including unknown ones) is signed.
+        2. Sort object keys recursively by UTF-16 code unit (same as the
+           built-in JS `Array.prototype.sort()`); duplicate keys are rejected.
+        3. Serialize without whitespace; escape strings exactly like
+           `JSON.stringify` (\" \\ \b \f \n \r \t, other control characters as
+           lowercase \u00xx, everything else including non-ASCII written as is
+           in UTF-8); array order is preserved.
+        4. Numbers are integers only, |n| <= 2^53-1 (money in whole rupiah), no
+           fractions or exponents. A lone UTF-16 surrogate is written as \udxxx
+           like JSON.stringify (the signature still verifies), but the
+           transaction is REJECTED invalid_payload (stored, no anomaly).
 
-        Referensi JS:
+        JS reference:
         ```js
         const canon = (v) => Array.isArray(v) ? '[' + v.map(canon).join(',') + ']'
           : v !== null && typeof v === 'object'
@@ -1198,57 +1214,61 @@ paths:
           { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
         txn.signature = bytesToHex(new Uint8Array(await crypto.subtle.sign('HMAC', key, bytes)));
         ```
-        signature = hex huruf kecil HMAC-SHA256(signing_key, kanonis);
-        payload_hash server = SHA-256(kanonis).
+        signature = lowercase hex HMAC-SHA256(signing_key, canonical);
+        server payload_hash = SHA-256(canonical).
 
-        **Status per transaksi** (`results[].status`):
-        - ACCEPTED: dicatat (stok, serial, order POS COMPLETED, pembayaran).
-        - ACCEPTED_WITH_CONFLICT: dicatat, plus `detail.conflicts`
-          (OFFLINE_SALE_PREEMPT: reservasi online dikalahkan;
-          STOCK_DISCREPANCY: stok fisik tercatat kurang; SERIAL_DOUBLE_SALE:
-          serial terdaftar tapi sudah terjual/salah lokasi/bukan unit/produk
-          lain, tidak diubah; SERIAL_UNREGISTERED: serial tidak terdaftar,
-          anomali POS_UNREGISTERED_SERIAL; PAYMENT_REF_DUPLICATE: approval_ref
-          sudah dipakai transaksi lain, pembayaran dicatat PENDING).
-        - REJECTED: tidak ada efek stok/order; `detail.reason`:
-          - disimpan (kirim ulang = DUPLICATE, seq terisi): invalid_payload
-            (bersignature sah), cashier_not_allowed (kasir tidak dikenal atau
-            tanpa role pos.sync di lokasi), unknown_product, validation_failed,
+        **Per-transaction status** (`results[].status`):
+        - ACCEPTED: recorded (stock, serials, COMPLETED POS order, payments).
+        - ACCEPTED_WITH_CONFLICT: recorded, plus `detail.conflicts`
+          (OFFLINE_SALE_PREEMPT: an online reservation lost to the sale;
+          STOCK_DISCREPANCY: recorded physical stock was short;
+          SERIAL_DOUBLE_SALE: serial is registered but already sold, at another
+          location, not a unit, or a different product, and is left unchanged;
+          SERIAL_UNREGISTERED: serial is not registered, anomaly
+          POS_UNREGISTERED_SERIAL; PAYMENT_REF_DUPLICATE: approval_ref already
+          used by another transaction, payment recorded as PENDING).
+        - REJECTED: no stock or order effect; `detail.reason`:
+          - stored (resend = DUPLICATE, seq filled): invalid_payload (validly
+            signed), cashier_not_allowed (unknown cashier or no pos.sync role at
+            the location), unknown_product, validation_failed,
             invalid_characters, total_mismatch, payment_insufficient;
-          - idempotency_key_reused (client_txn_id sudah dipakai dengan isi
-            berbeda; transaksi asli tetap berlaku; seq baru diisi baris
-            tombstone REJECTED supaya ack maju; anomali POS_PAYLOAD_MISMATCH);
-          - TIDAK disimpan: invalid_signature, invalid_payload yang tidak
-            bisa diverifikasi (identitas rusak / tidak bisa dikanonisasi),
-            device_seq_reused (seq sudah dipakai transaksi lain; anomali).
-        - DUPLICATE: sudah pernah diproses; `result` dan `detail` adalah hasil
-          asli, identik byte per byte dengan respons pertama.
-        - RETRY: gagal sementara (stock_contended / temporary_failure), tidak
-          disimpan; kirim ulang nanti.
-        Hapus dari outbox untuk ACCEPTED, ACCEPTED_WITH_CONFLICT, DUPLICATE;
-        pindahkan REJECTED ke daftar "perlu perhatian"; pertahankan RETRY.
+          - idempotency_key_reused (client_txn_id already used with a different
+            body; the original transaction stands; the new seq gets a REJECTED
+            tombstone row so ack can advance; anomaly POS_PAYLOAD_MISMATCH);
+          - not stored: invalid_signature, invalid_payload that cannot be
+            verified (broken identity or not canonicalizable),
+            device_seq_reused (seq already used by another transaction;
+            anomaly).
+        - DUPLICATE: already processed; `result` and `detail` are the original
+          result, byte-identical to the first response.
+        - RETRY: transient failure (stock_contended or temporary_failure), not
+          stored; resend later.
+        Remove from the outbox for ACCEPTED, ACCEPTED_WITH_CONFLICT, and
+        DUPLICATE; move REJECTED to a "needs attention" list; keep RETRY.
+        `detail.message` and `detail.errors[].message` are Indonesian text that
+        can be shown to the cashier.
 
-        **Flag** (`detail.flags`, transaksi tetap ACCEPTED): PRICE_STALE
-        (price_list_version bukan versi yang berlaku saat transaksi),
-        OFFLINE_TOO_LONG (terjadi > offline_limit_seconds sebelum diterima),
-        CLOCK_SKEW (|server_time − client_time| > toleransi), FUTURE_TIMESTAMP,
-        PRICE_MISMATCH (unit_price beda dari price list yang berlaku pada
-        waktu transaksi), HIGH_DISCOUNT (diskon line > high_discount_percent),
-        OFFLINE_VALUE_LIMIT (total > offline_value_limit; + anomali),
-        ZERO_TOTAL, CASHIER_INACTIVE (kasir punya role di lokasi tetapi user
-        sudah nonaktif saat sync; penjualan tetap fakta; + anomali),
-        SERIAL_INVALID_FORMAT (kode yang dipindai bukan format serial; daftar
-        di `detail.invalid_serials`, tanpa anomali). Kode serial dinormalisasi
-        seperti verifikasi konsumen (huruf besar, tanpa spasi/strip, I/L→1,
-        O→0). occurred_at device disimpan apa adanya; ledger/order memakai
-        occurred_at + clock_skew_ms (dibatasi <= waktu terima).
+        **Flags** (`detail.flags`, the transaction stays ACCEPTED): PRICE_STALE
+        (price_list_version is not the version in effect at transaction time),
+        OFFLINE_TOO_LONG (happened more than offline_limit_seconds before it was
+        received), CLOCK_SKEW (|server_time − client_time| > tolerance),
+        FUTURE_TIMESTAMP, PRICE_MISMATCH (unit_price differs from the price list
+        in effect at transaction time), HIGH_DISCOUNT (line discount >
+        high_discount_percent), OFFLINE_VALUE_LIMIT (total >
+        offline_value_limit; plus anomaly), ZERO_TOTAL, CASHIER_INACTIVE
+        (cashier has a role at the location but the user was deactivated by
+        sync time; the sale is still a fact; plus anomaly),
+        SERIAL_INVALID_FORMAT (scanned code is not in serial format; listed in
+        `detail.invalid_serials`, no anomaly). Serial codes are normalized like
+        consumer verification (uppercase, no spaces or hyphens, I/L→1, O→0).
+        The device's occurred_at is stored as is; ledger and order use
+        occurred_at + clock_skew_ms (capped at the receive time).
 
-        **ack_up_to_seq** = N terbesar sehingga seq 1..N device ini sudah
-        tersimpan (hasil apa pun yang disimpan, termasuk REJECTED dan
-        tombstone). missing_seqs = seq yang
-        belum diterima antara ack_up_to_seq+1 dan seq tertinggi yang tersimpan
-        (maks. 500; missing_seqs_truncated kalau terpotong). Batch kosong boleh
-        dipakai untuk menanyakan ack.
+        **ack_up_to_seq** = the largest N such that seq 1..N of this device is
+        stored (any stored result, including REJECTED and tombstones).
+        missing_seqs = seqs not yet received between ack_up_to_seq+1 and the
+        highest stored seq (max 500; missing_seqs_truncated when cut off). An
+        empty batch may be sent to ask for the ack.
       tags: [pos]
       security: [{ deviceToken: [] }]
       requestBody:
@@ -1258,7 +1278,7 @@ paths:
             schema: { $ref: "#/components/schemas/PosSyncRequest" }
       responses:
         "200":
-          description: Hasil per transaksi (urut device_seq) dan status ack
+          description: Per-transaction results (ordered by device_seq) and ack status
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PosSyncResponse" }
@@ -1272,15 +1292,16 @@ paths:
   /api/v1/cc/conflicts/{id}/resolve:
     post:
       operationId: resolveAllocationConflict
-      summary: Tutup konflik alokasi OPEN → RESOLVED
+      summary: Close an allocation conflict OPEN → RESOLVED
       description: >
-        Permission conflict.resolve di lokasi konflik (CanAt). Konflik di luar
-        scope dijawab 404 conflict_not_found (sama dengan /cc/anomalies/{id}).
-        Hanya status OPEN; AUTO_RESOLVED/RESOLVED = 409 invalid_transition. Dua
-        permintaan bersamaan: tepat satu menang. ORDER_CANCELLED hanya sah
-        kalau order terkait sudah CANCELLED/EXPIRED (selain itu, termasuk
-        konflik tanpa order, 409 resolution_not_applicable). Catatan disimpan
-        di details.resolution_note dan audit_logs.
+        Permission conflict.resolve at the conflict's location (CanAt). A
+        conflict outside scope returns 404 conflict_not_found (same as
+        /cc/anomalies/{id}). Only status OPEN; AUTO_RESOLVED or RESOLVED = 409
+        invalid_transition. Two concurrent requests: exactly one wins.
+        ORDER_CANCELLED is valid only when the related order is already
+        CANCELLED or EXPIRED (otherwise, including conflicts without an order,
+        409 resolution_not_applicable). The note is stored in
+        details.resolution_note and audit_logs.
       tags: [commandcenter]
       security: [{ sessionCookie: [] }]
       parameters:
@@ -1292,7 +1313,7 @@ paths:
             schema: { $ref: "#/components/schemas/ConflictResolveRequest" }
       responses:
         "200":
-          description: Konflik sesudah ditutup
+          description: Conflict after closing
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CCConflictItem" }
@@ -1313,27 +1334,28 @@ paths:
   /api/v1/cc/summary:
     get:
       operationId: getCommandCenterSummary
-      summary: Fakta ringkas untuk kalimat ringkasan Command Center
+      summary: Compact facts for the Command Center summary sentence
       description: >
-        Hitungan runout dan stok habis hanya untuk lokasi milik sendiri; stok di lokasi
-        mitra hanya estimasi dan tidak masuk ringkasan (tetap tampil di /cc/runout).
+        Runout and stock-out counts cover own locations only; stock at partner
+        locations is an estimate and is excluded from the summary (it still
+        appears in /cc/runout).
       tags: [commandcenter]
       security: [{ sessionCookie: [] }]
       responses:
         "200":
-          description: Angka terstruktur; UI yang menyusun kalimat
+          description: Structured numbers; the UI composes the sentence
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CCSummaryResponse"
         "401": &ccUnauthorized
-          description: Belum masuk
+          description: Not logged in
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "403": &ccForbidden
-          description: Tanpa permission, atau filter lokasi di luar scope
+          description: Missing permission, or a location filter outside scope
           content:
             application/problem+json:
               schema:
@@ -1341,8 +1363,8 @@ paths:
   /api/v1/cc/stock:
     get:
       operationId: listCommandCenterStock
-      summary: Saldo stok per lokasi dan produk (physical, reserved, quarantine, available)
-      description: Stok di lokasi bukan milik sendiri (gudang mitra, marketplace) ditandai is_estimate.
+      summary: Stock balance per location and product (physical, reserved, quarantine, available)
+      description: Stock at locations that are not owned (partner warehouse, marketplace) is flagged is_estimate.
       tags: [commandcenter]
       security: [{ sessionCookie: [] }]
       parameters:
@@ -1353,12 +1375,12 @@ paths:
         - &ccCursor
           name: cursor
           in: query
-          description: next_cursor dari halaman sebelumnya (opaque)
+          description: next_cursor from the previous page (opaque)
           schema: { type: string, maxLength: 1024 }
         - &ccLocationType
           name: location_type
           in: query
-          description: Kode location_types, mis. CENTRAL_WH, HUB, OWN_STORE, PARTNER_WH
+          description: location_types code, e.g. CENTRAL_WH, HUB, OWN_STORE, PARTNER_WH
           schema: { type: string, pattern: "^[A-Z][A-Z0-9_]{0,63}$" }
         - &ccLocationId
           name: location_id
@@ -1370,7 +1392,7 @@ paths:
           schema: { type: string, format: uuid }
       responses:
         "200":
-          description: Satu halaman saldo, urut kode lokasi lalu SKU
+          description: One page of balances, ordered by location code then SKU
           content:
             application/json:
               schema:
@@ -1378,7 +1400,7 @@ paths:
         "401": *ccUnauthorized
         "403": *ccForbidden
         "422": &ccInvalid
-          description: Query param tidak valid (limit, cursor, filter)
+          description: Invalid query parameter (limit, cursor, filter)
           content:
             application/problem+json:
               schema:
@@ -1386,15 +1408,16 @@ paths:
   /api/v1/cc/runout:
     get:
       operationId: listCommandCenterRunout
-      summary: Days of inventory dan perkiraan tanggal habis per lokasi dan produk
+      summary: Days of inventory and estimated stock-out date per location and product
       description: >
-        DOI = available ÷ rata-rata penjualan harian (DIRECT_SALE + COMMIT_SALE dalam 28 hari
-        terakhir ÷ history_days). history_days = hari sejak mutasi pertama (lokasi, produk),
-        1..28, sehingga SKU baru tidak dibagi 28 hari; riwayat < 7 hari diberi reason
-        SHORT_HISTORY. DOI dibulatkan 2 desimal sekali dan nilai itu yang dipakai untuk level.
-        CRITICAL bila DOI < lead_time_days atau stok habis padahal masih laku; WARNING bila
-        DOI < lead_time_days + safety_days atau available < min_qty; INSUFFICIENT_DATA bila
-        tanpa riwayat penjualan (DOI null, tidak dikarang). Urut paling kritis dulu.
+        DOI = available ÷ average daily sales (DIRECT_SALE + COMMIT_SALE over the last 28 days
+        ÷ history_days). history_days = days since the first movement for (location, product),
+        1..28, so a new SKU is not divided by 28 days; history under 7 days gets reason
+        SHORT_HISTORY. DOI is rounded to 2 decimals once and that value decides the level.
+        CRITICAL when DOI < lead_time_days or stock is out while the product still sells;
+        WARNING when DOI < lead_time_days + safety_days or available < min_qty;
+        INSUFFICIENT_DATA when there is no sales history (DOI null, never invented). Most
+        critical first.
       tags: [commandcenter]
       security: [{ sessionCookie: [] }]
       parameters:
@@ -1409,7 +1432,7 @@ paths:
             $ref: "#/components/schemas/CCRunoutLevel"
       responses:
         "200":
-          description: Satu halaman runout
+          description: One page of runout rows
           content:
             application/json:
               schema:
@@ -1420,10 +1443,10 @@ paths:
   /api/v1/cc/anomalies:
     get:
       operationId: listCommandCenterAnomalies
-      summary: Antrean anomali distribusi dan stok, terbaru dulu
+      summary: Distribution and stock anomaly queue, newest first
       description: >
-        Pemanggil ber-scope lokasi (SELECTED) hanya melihat anomali dengan subject_type
-        LOCATION di lokasinya; anomali distribusi (party/wilayah) hanya untuk scope ALL.
+        A location-scoped caller (SELECTED) only sees anomalies with subject_type LOCATION at
+        its locations; distribution anomalies (party or territory) are for ALL scope only.
       tags: [commandcenter]
       security: [{ sessionCookie: [] }]
       parameters:
@@ -1439,14 +1462,14 @@ paths:
             $ref: "#/components/schemas/CCSeverity"
         - name: rule
           in: query
-          description: Kode anomaly_rules, mis. OUT_OF_TERRITORY
+          description: anomaly_rules code, e.g. OUT_OF_TERRITORY
           schema: { type: string, pattern: "^[A-Z][A-Z0-9_]{0,63}$" }
         - name: party_id
           in: query
           schema: { type: string, format: uuid }
       responses:
         "200":
-          description: Satu halaman anomali
+          description: One page of anomalies
           content:
             application/json:
               schema:
@@ -1457,8 +1480,8 @@ paths:
   /api/v1/cc/anomalies/{id}:
     patch:
       operationId: updateCommandCenterAnomaly
-      summary: Tindak lanjut anomali (OPEN→ACK, OPEN/ACK→RESOLVED/FALSE_POSITIVE)
-      description: Perubahan bersyarat dan dicatat di audit_logs. note wajib untuk RESOLVED dan FALSE_POSITIVE.
+      summary: Follow up an anomaly (OPEN→ACK, OPEN/ACK→RESOLVED/FALSE_POSITIVE)
+      description: Conditional update, recorded in audit_logs. note is required for RESOLVED and FALSE_POSITIVE.
       tags: [commandcenter]
       security: [{ sessionCookie: [] }]
       parameters:
@@ -1474,13 +1497,13 @@ paths:
               $ref: "#/components/schemas/CCAnomalyUpdateRequest"
       responses:
         "200":
-          description: Anomali setelah diubah
+          description: Anomaly after the update
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CCAnomalyItem"
         "400":
-          description: Body bukan JSON valid atau memuat field tak dikenal
+          description: invalid_request (body is not valid JSON or has unknown fields)
           content:
             application/problem+json:
               schema:
@@ -1488,13 +1511,13 @@ paths:
         "401": *ccUnauthorized
         "403": *ccForbidden
         "404":
-          description: Anomali tidak ada atau di luar scope (anomaly_not_found)
+          description: anomaly_not_found (missing or outside scope)
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "409":
-          description: Transisi tidak sah dari status sekarang (invalid_transition)
+          description: invalid_transition (not allowed from the current status)
           content:
             application/problem+json:
               schema:
@@ -1503,7 +1526,7 @@ paths:
   /api/v1/cc/conflicts:
     get:
       operationId: listCommandCenterConflicts
-      summary: Konflik alokasi (POS offline vs reservasi online), terbaru dulu
+      summary: Allocation conflicts (offline POS vs online reservation), newest first
       tags: [commandcenter]
       security: [{ sessionCookie: [] }]
       parameters:
@@ -1518,7 +1541,7 @@ paths:
         - *ccLocationId
       responses:
         "200":
-          description: Satu halaman konflik
+          description: One page of conflicts
           content:
             application/json:
               schema:
@@ -1529,16 +1552,17 @@ paths:
   /api/v1/cc/distribution-leakage:
     get:
       operationId: listCommandCenterDistributionLeakage
-      summary: Indeks kebocoran wilayah per distributor (Kasus 1)
+      summary: Territory leakage index per distributor (Case 1)
       description: >
-        Scan unit (verifikasi konsumen, klaim, test-buy) dikaitkan ke custodian SAAT scan
-        (unit_events ber-party terakhir sebelum scan, fallback custodian sekarang), hanya
-        selama role DISTRIBUTOR party itu aktif, lalu dinilai terhadap wilayah resmi yang
-        berlaku saat scan (NATIONAL tidak pernah keluar wilayah). Scan yang wilayahnya lebih
-        kasar dari wilayah resmi (scan 35, territory 35.78) tidak dinilai (unjudged_scans).
-        Ambang sampel dan baseline dari anomaly_rules OUT_OF_TERRITORY. Rasio dibulatkan 4
-        desimal sekali; above_baseline memakai rasio yang ditampilkan. Alert bila rasio di
-        atas baseline dengan sampel cukup, atau ada hit TEST_BUY di luar wilayah.
+        Unit scans (consumer verification, claims, test buys) are attributed to the custodian
+        at scan time (the last unit_event with a party before the scan, falling back to the
+        current custodian), only while that party's DISTRIBUTOR role is active, then judged
+        against the official territory in effect at scan time (NATIONAL is never out of
+        territory). Scans whose region is coarser than the official territory (scan 35,
+        territory 35.78) are not judged (unjudged_scans). Sample threshold and baseline come
+        from anomaly_rules OUT_OF_TERRITORY. The ratio is rounded to 4 decimals once;
+        above_baseline uses the displayed ratio. Alert when the ratio is above baseline with
+        enough samples, or when there is an out-of-territory TEST_BUY hit.
       tags: [commandcenter]
       security: [{ sessionCookie: [] }]
       parameters:
@@ -1547,15 +1571,15 @@ paths:
         - name: days
           in: query
           description: >
-            Jendela waktu dalam hari. Maksimal 90 karena indeks dihitung sinkron per request;
-            di produksi perhitungan dipindah ke worker/materialized view harian.
+            Time window in days. Capped at 90 because the index is computed synchronously per
+            request; in production the computation moves to a worker or a daily materialized view.
           schema: { type: integer, minimum: 1, maximum: 90, default: 30 }
         - name: party_id
           in: query
           schema: { type: string, format: uuid }
       responses:
         "200":
-          description: Satu halaman distributor, alert dan rasio tertinggi dulu
+          description: One page of distributors, alerts and highest ratios first
           content:
             application/json:
               schema:
@@ -1620,14 +1644,14 @@ components:
       properties:
         code:
           type: string
-          description: Kode role, mis. ADMIN, CASHIER
+          description: Role code, e.g. ADMIN, CASHIER
         name:
           type: string
         scope_mode:
           $ref: "#/components/schemas/ScopeMode"
         locations:
           type: array
-          description: Hanya terisi untuk scope SELECTED
+          description: Only filled for SELECTED scope
           items:
             $ref: "#/components/schemas/LocationRef"
     ScopeMode:
@@ -1636,8 +1660,9 @@ components:
     MeScope:
       type: object
       description: >
-        Scope lokasi efektif. ALL = semua lokasi (locations kosong). SELECTED =
-        hanya locations; daftar kosong berarti tidak ada akses lokasi.
+        Effective location scope. ALL = every location (locations is empty).
+        SELECTED = only the listed locations; an empty list means no location
+        access.
       required: [mode, locations]
       properties:
         mode:
@@ -1658,7 +1683,7 @@ components:
             $ref: "#/components/schemas/MeRole"
         permissions:
           type: array
-          description: Gabungan permission semua role, urut
+          description: Union of permissions across all roles, sorted
           items:
             type: string
         scope:
@@ -1671,7 +1696,7 @@ components:
         phone:
           type: string
           maxLength: 32
-          description: Nomor seluler Indonesia, mis. 0812xxxxxxxx atau +62812xxxxxxxx
+          description: Indonesian mobile number, e.g. 0812xxxxxxxx or +62812xxxxxxxx
     OtpRequestResponse:
       type: object
       required: [expires_at, expires_in_seconds]
@@ -1701,14 +1726,14 @@ components:
           format: uuid
         phone_masked:
           type: string
-          description: Nomor E.164 yang disamarkan, mis. +62812*****890
+          description: Masked E.164 number, e.g. +62812*****890
     # ==== [/iam] ====
 
     # ==== [serialization] ====
     SerialCodeList:
       type: array
       minItems: 1
-      description: Kode serial 16 karakter Crockford Base32; duplikat (setelah normalisasi) ditolak 422
+      description: 16-character Crockford Base32 serial code; duplicates (after normalization) are rejected with 422
       items:
         type: string
         maxLength: 64
@@ -1720,7 +1745,7 @@ components:
         level_code:
           type: string
           maxLength: 32
-          description: Kode packaging_levels (UNIT, INNER, CARTON, PALLET)
+          description: packaging_levels code (UNIT, INNER, CARTON, PALLET)
         qty:
           type: integer
           minimum: 1
@@ -1763,7 +1788,7 @@ components:
           type: string
         pin:
           type: string
-          description: PIN klaim (hanya level UNIT); hanya dikirim sekali di respons mint
+          description: Claim PIN (UNIT level only); sent only once, in the mint response
     MintCodesResponse:
       type: object
       required: [code_batch, codes]
@@ -1898,12 +1923,12 @@ components:
         to_party_id:
           type: string
           format: uuid
-          description: Default party pemilik lokasi tujuan
+          description: Defaults to the party that owns the destination location
         program_code:
           type: string
           minLength: 1
           maxLength: 64
-          description: Program harga, mis. SUBSIDI_SULSEL_Q4
+          description: Price program, e.g. SUBSIDI_SULSEL_Q4
         codes:
           allOf:
             - $ref: "#/components/schemas/SerialCodeList"
@@ -1960,7 +1985,7 @@ components:
         serials:
           type: integer
           format: int64
-          description: Serial (semua level) yang berubah status oleh request ini
+          description: Serials (all levels) whose status changed in this request
         skipped:
           type: integer
           format: int64
@@ -2049,7 +2074,7 @@ components:
           type: string
         depth:
           type: integer
-          description: 1 = induk langsung
+          description: 1 = direct parent
     TraceDescendant:
       type: object
       required: [level_code, status, count]
@@ -2114,7 +2139,7 @@ components:
           type: [string, "null"]
         via_code:
           type: string
-          description: Kode serial (unit/karton/palet) yang tercatat di shipment_items
+          description: Serial code (unit, carton, or pallet) recorded in shipment_items
         shipped_at:
           type: [string, "null"]
           format: date-time
@@ -2187,7 +2212,7 @@ components:
           type: number
           minimum: -90
           maximum: 90
-          description: Wajib berpasangan dengan lng
+          description: Must be sent together with lng
         lng:
           type: number
           minimum: -180
@@ -2204,7 +2229,7 @@ components:
           $ref: "#/components/schemas/VerifyResult"
         product:
           type: object
-          description: Hanya untuk GENUINE_* dan RECALLED
+          description: Only for GENUINE_* and RECALLED
           required: [name, lot_no, exp_date]
           properties:
             name:
@@ -2230,7 +2255,7 @@ components:
         pin:
           type: string
           maxLength: 64
-          description: PIN 10 karakter di dalam kemasan
+          description: 10-character PIN inside the package
         lat:
           type: number
           minimum: -90
@@ -2281,11 +2306,11 @@ components:
         decision:
           type: string
           enum: [APPROVE, REJECT, REVERSE]
-          description: APPROVE/REJECT untuk klaim PENDING; REVERSE (clawback) untuk klaim APPROVED
+          description: APPROVE/REJECT for PENDING claims; REVERSE (clawback) for APPROVED claims
         note:
           type: string
           maxLength: 1000
-          description: Alasan; wajib untuk REVERSE
+          description: Reason; required for REVERSE
     ReviewClaimResponse:
       type: object
       required: [claim_id, status, points, risk_score, risk_reasons, review_required, available_at, decided_at]
@@ -2341,7 +2366,7 @@ components:
         quarantine_qty: { type: integer, format: int64 }
         available_qty: { type: integer, format: int64, description: physical − reserved − quarantine }
         online_buffer_qty: { type: integer, format: int64 }
-        online_atp: { type: integer, format: int64, description: "Stok yang boleh dijanjikan ke online (0 kalau OFFLINE)" }
+        online_atp: { type: integer, format: int64, description: "Stock that may be promised online (0 when OFFLINE)" }
         updated_at: { type: string, format: date-time }
     InventoryBalancePage:
       type: object
@@ -2352,7 +2377,7 @@ components:
           items: { $ref: "#/components/schemas/InventoryBalanceItem" }
         next_cursor:
           type: [string, "null"]
-          description: null = halaman terakhir
+          description: null = last page
     InventoryAdjustmentRequest:
       type: object
       additionalProperties: false
@@ -2360,8 +2385,8 @@ components:
       properties:
         location_id: { type: string, format: uuid }
         product_id: { type: string, format: uuid }
-        qty_delta: { type: integer, format: int64, minimum: -1000000, maximum: 1000000, description: "≠ 0; negatif = kurang" }
-        reason: { type: string, minLength: 3, maxLength: 500, description: "Wajib, 3-500 karakter (unicode)" }
+        qty_delta: { type: integer, format: int64, minimum: -1000000, maximum: 1000000, description: "≠ 0; negative = decrease" }
+        reason: { type: string, minLength: 3, maxLength: 500, description: "Required, 3-500 characters (unicode)" }
     InventoryQuarantineRequest:
       type: object
       additionalProperties: false
@@ -2408,7 +2433,7 @@ components:
       properties:
         movement: { $ref: "#/components/schemas/InventoryMovement" }
         balance: { $ref: "#/components/schemas/InventoryBalance" }
-        duplicate: { type: boolean, description: "true = replay Idempotency-Key, tanpa mutasi baru" }
+        duplicate: { type: boolean, description: "true = Idempotency-Key replay, no new movement" }
     OrderStatus:
       type: string
       enum: [PENDING_PAYMENT, PAID, FULFILLING, SHIPPED, DELIVERED, COMPLETED, EXPIRED, NEEDS_ACTION, CANCELLED, RETURNED]
@@ -2424,12 +2449,12 @@ components:
       additionalProperties: false
       required: [lines]
       properties:
-        channel_code: { type: string, maxLength: 32, description: "Kosong = D2C_WEB; hanya channel bertipe D2C" }
+        channel_code: { type: string, maxLength: 32, description: "Empty = D2C_WEB; D2C channels only" }
         lines:
           type: array
           minItems: 1
           maxItems: 50
-          description: Satu produk hanya boleh muncul sekali
+          description: Each product may appear only once
           items: { $ref: "#/components/schemas/OrderCreateLine" }
         note: { type: string, maxLength: 500 }
     OrderCancelRequest:
@@ -2466,7 +2491,7 @@ components:
         sku: { type: string }
         product_name: { type: string }
         qty: { type: integer, format: int64 }
-        unit_price: { type: integer, format: int64, description: Rupiah utuh }
+        unit_price: { type: integer, format: int64, description: Whole rupiah }
         discount: { type: integer, format: int64 }
         serial_unit_ids:
           type: array
@@ -2529,9 +2554,9 @@ components:
           type: object
           additionalProperties: true
           description: >
-            Catatan dan penanda operasional, misal note, refund_required,
+            Operational notes and flags, e.g. note, refund_required,
             refund_reason, refund_payment_ids, needs_action_reason,
-            expired_reason, split_fulfillment, payload_hash (impor marketplace).
+            expired_reason, split_fulfillment, payload_hash (marketplace import).
         lines:
           type: array
           items: { $ref: "#/components/schemas/OrderLine" }
@@ -2549,7 +2574,7 @@ components:
       additionalProperties: false
       required: [provider_ref, order_id, amount, currency, status]
       properties:
-        provider_ref: { type: string, maxLength: 128, description: "ID event/transaksi di provider; kunci idempotensi" }
+        provider_ref: { type: string, maxLength: 128, description: "Event or transaction ID at the provider; idempotency key" }
         order_id: { type: string, format: uuid }
         amount: { type: integer, format: int64, minimum: 1 }
         currency: { type: string, minLength: 3, maxLength: 3 }
@@ -2580,7 +2605,7 @@ components:
       additionalProperties: false
       required: [channel_code, external_ref, lines]
       properties:
-        channel_code: { type: string, maxLength: 32, description: "Channel bertipe MARKETPLACE (SHOPEE, TOKOPEDIA, TIKTOK_SHOP)" }
+        channel_code: { type: string, maxLength: 32, description: "MARKETPLACE channel (SHOPEE, TOKOPEDIA, TIKTOK_SHOP)" }
         external_ref: { type: string, maxLength: 128 }
         placed_at: { type: string, format: date-time }
         currency: { type: string, minLength: 3, maxLength: 3, default: IDR }
@@ -2604,7 +2629,7 @@ components:
       required: [location_id, name]
       properties:
         location_id: { type: string, format: uuid }
-        name: { type: string, minLength: 1, maxLength: 100, description: "1-100 karakter (unicode), tanpa karakter kontrol" }
+        name: { type: string, minLength: 1, maxLength: 100, description: "1-100 characters (unicode), no control characters" }
     PosDeviceRevokeRequest:
       type: object
       additionalProperties: false
@@ -2631,11 +2656,11 @@ components:
       required: [device, token, signing_key]
       properties:
         device: { $ref: "#/components/schemas/PosDevice" }
-        token: { type: string, description: "Token bearer device (prefix pos_). Hanya ditampilkan sekali." }
+        token: { type: string, description: "Device bearer token (prefix pos_). Shown only once." }
         signing_key:
           type: string
           pattern: "^[0-9a-f]{64}$"
-          description: "Kunci HMAC-SHA256 transaksi (32 byte, hex huruf kecil). Hanya ditampilkan sekali."
+          description: "HMAC-SHA256 key for transactions (32 bytes, lowercase hex). Shown only once."
     PosDevicePage:
       type: object
       required: [items, next_cursor]
@@ -2643,7 +2668,7 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/PosDevice" }
-        next_cursor: { type: [string, "null"], description: null = halaman terakhir }
+        next_cursor: { type: [string, "null"], description: null = last page }
     PosBootstrap:
       type: object
       required: [server_time, device, location, limits, products, price_list, stock, cashiers, serials]
@@ -2671,9 +2696,9 @@ components:
             clock_skew_tolerance_seconds: { type: integer, format: int64 }
             sync_max_batch: { type: integer }
             sync_max_body_bytes: { type: integer, format: int64 }
-            max_serials_per_txn: { type: integer, description: "Batas serial per transaksi (selain <= qty per line)" }
-            high_discount_percent: { type: integer, description: "Diskon line di atas ini → flag HIGH_DISCOUNT" }
-            offline_value_limit: { type: integer, format: int64, description: "Total di atas ini → flag OFFLINE_VALUE_LIMIT" }
+            max_serials_per_txn: { type: integer, description: "Serial limit per transaction (in addition to <= qty per line)" }
+            high_discount_percent: { type: integer, description: "A line discount above this → flag HIGH_DISCOUNT" }
+            offline_value_limit: { type: integer, format: int64, description: "A total above this → flag OFFLINE_VALUE_LIMIT" }
         products:
           type: array
           items:
@@ -2687,8 +2712,8 @@ components:
               uom: { type: string }
         price_list:
           description: >
-            Price list POS yang berlaku sekarang (list khusus lokasi menggantikan
-            list default seluruhnya). null kalau belum ada.
+            The POS price list currently in effect (a location-specific list
+            fully replaces the default list). null when there is none.
           oneOf:
             - type: "null"
             - type: object
@@ -2696,7 +2721,7 @@ components:
               properties:
                 id: { type: string, format: uuid }
                 code: { type: string }
-                version: { type: integer, format: int64, description: "Dibawa sebagai price_list_version di transaksi" }
+                version: { type: integer, format: int64, description: "Sent as price_list_version in transactions" }
                 location_id: { type: [string, "null"], format: uuid }
                 currency: { type: string }
                 valid_from: { type: string, format: date-time }
@@ -2728,7 +2753,7 @@ components:
             properties:
               id: { type: string, format: uuid }
               name: { type: string }
-              pos_pin_hash: { type: string, description: "argon2id PHC, untuk verifikasi PIN lokal" }
+              pos_pin_hash: { type: string, description: "argon2id PHC string, for local PIN verification" }
         serials: { $ref: "#/components/schemas/PosSerialPage" }
     PosSerialPage:
       type: object
@@ -2747,15 +2772,15 @@ components:
       type: object
       additionalProperties: false
       properties:
-        client_time: { type: string, format: date-time, description: "Jam device; dipakai menghitung clock_skew_ms" }
+        client_time: { type: string, format: date-time, description: "Device clock; used to compute clock_skew_ms" }
         pending_count:
           type: integer
           format: int64
           minimum: 0
           description: >
-            Jumlah transaksi di outbox yang belum ter-ack. Wajib 0 (dan tanpa
-            gap seq di server) supaya toko dijadikan ONLINE; tidak dikirim =
-            dianggap belum diketahui (toko tidak dijadikan ONLINE).
+            Number of un-acked transactions in the outbox. Must be 0 (with no
+            seq gap on the server) for the store to become ONLINE; omitted =
+            unknown (the store does not become ONLINE).
     PosHeartbeatResponse:
       type: object
       required: [server_time, location_sync_state, last_acked_seq, heartbeat_interval_seconds, heartbeat_timeout_seconds,
@@ -2770,21 +2795,21 @@ components:
         online_blocked_reason:
           type: [string, "null"]
           enum: [pending_count_missing, pending_outbox, missing_seqs, null]
-          description: "null = heartbeat ini menjadikan toko ONLINE"
+          description: "null = this heartbeat made the store ONLINE"
     PosTransaction:
       type: object
       description: >
-        Satu transaksi kasir (dibuat offline). Total = Σ(qty × unit_price −
-        discount); pembayaran >= total (kembalian hanya dari CASH; non-tunai
-        tidak boleh melebihi total); teks bebas tanpa karakter kontrol (\n dan
-        \t boleh di note). Field yang tidak dikenal membuat transaksi REJECTED
-        invalid_payload (tetap ikut ditandatangani).
+        One cashier transaction (created offline). Total = Σ(qty × unit_price −
+        discount); payments >= total (change only from CASH; non-cash must not
+        exceed the total); free text without control characters (\n and \t are
+        allowed in note). Unknown fields make the transaction REJECTED
+        invalid_payload (they are still signed).
       required: [client_txn_id, device_seq, cashier_id, occurred_at, price_list_version, total, lines, payments, signature]
       properties:
         client_txn_id: { type: string, format: uuid }
         device_seq: { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
-        cashier_id: { type: string, format: uuid, description: "User aktif ber-scope pos.sync di lokasi device" }
-        occurred_at: { type: string, format: date-time, description: "Jam device saat transaksi" }
+        cashier_id: { type: string, format: uuid, description: "Active user with pos.sync scope at the device's location" }
+        occurred_at: { type: string, format: date-time, description: "Device clock at transaction time" }
         price_list_version: { type: integer, format: int64, minimum: 1 }
         total: { type: integer, format: int64, minimum: 0 }
         note: { type: string, maxLength: 500 }
@@ -2803,9 +2828,10 @@ components:
               serials:
                 type: array
                 description: >
-                  Kode serial UNIT yang dipindai (<= qty per line, total <=
-                  max_serials_per_txn, unik per transaksi setelah normalisasi).
-                  Format salah tetap diterima dengan flag SERIAL_INVALID_FORMAT.
+                  Scanned UNIT serial codes (<= qty per line, total <=
+                  max_serials_per_txn, unique per transaction after
+                  normalization). Malformed codes are still accepted with flag
+                  SERIAL_INVALID_FORMAT.
                 items: { type: string, minLength: 1, maxLength: 64 }
         payments:
           type: array
@@ -2814,19 +2840,19 @@ components:
             type: object
             required: [method, amount]
             properties:
-              method: { type: string, enum: [CASH, EDC, QRIS], description: "Maksimal satu CASH" }
+              method: { type: string, enum: [CASH, EDC, QRIS], description: "At most one CASH" }
               amount: { type: integer, format: int64, minimum: 1, maximum: 100000000000000 }
               approval_ref:
                 type: string
                 maxLength: 64
-                description: "Wajib untuk EDC/QRIS (dedupe per (provider, provider_ref)); tidak dipakai untuk CASH"
-        signature: { type: string, pattern: "^[0-9a-fA-F]{64}$", description: "hex HMAC-SHA256(signing_key, kanonis)" }
+                description: "Required for EDC/QRIS (deduplicated per (provider, provider_ref)); not used for CASH"
+        signature: { type: string, pattern: "^[0-9a-fA-F]{64}$", description: "hex HMAC-SHA256(signing_key, canonical)" }
     PosSyncRequest:
       type: object
       additionalProperties: false
       required: [transactions]
       properties:
-        client_time: { type: string, format: date-time, description: "Jam device saat batch dikirim (untuk clock_skew_ms)" }
+        client_time: { type: string, format: date-time, description: "Device clock when the batch is sent (for clock_skew_ms)" }
         transactions:
           type: array
           maxItems: 500
@@ -2838,12 +2864,12 @@ components:
         type:
           type: string
           enum: [OFFLINE_SALE_PREEMPT, STOCK_DISCREPANCY, SERIAL_DOUBLE_SALE, SERIAL_UNREGISTERED, PAYMENT_REF_DUPLICATE]
-        conflict_id: { type: string, format: uuid, description: "allocation_conflicts.id (tiga jenis pertama)" }
+        conflict_id: { type: string, format: uuid, description: "allocation_conflicts.id (first three kinds)" }
         product_id: { type: string, format: uuid }
         qty: { type: integer, format: int64 }
-        order_id: { type: string, format: uuid, description: "Order online yang reservasinya di-preempt" }
+        order_id: { type: string, format: uuid, description: "Online order whose reservation was preempted" }
         reservation_id: { type: string, format: uuid }
-        code: { type: string, description: "Kode serial" }
+        code: { type: string, description: "Serial code" }
         reason:
           type: string
           description: >
@@ -2856,9 +2882,10 @@ components:
     PosSyncDetail:
       type: object
       description: >
-        result_detail yang disimpan dan di-replay apa adanya. Untuk RETRY dan
-        REJECTED yang tidak disimpan (invalid_signature, identitas rusak,
-        device_seq_reused) hanya reason, message, dan errors.
+        The stored result_detail, replayed as is. For RETRY and for REJECTED
+        results that are not stored (invalid_signature, broken identity,
+        device_seq_reused) only reason, message, and errors. message and
+        errors[].message are Indonesian, cashier-facing text.
       properties:
         server_txn_id: { type: string, format: uuid }
         order_id: { type: string, format: uuid }
@@ -2868,7 +2895,7 @@ components:
           type: array
           items: { $ref: "#/components/schemas/FieldError" }
         received_at: { type: string, format: date-time }
-        occurred_at: { type: string, format: date-time, description: "Waktu terkoreksi skew yang dipakai ledger" }
+        occurred_at: { type: string, format: date-time, description: "Skew-corrected time used by the ledger" }
         clock_skew_ms: { type: integer, format: int64 }
         flags:
           type: array
@@ -2878,7 +2905,7 @@ components:
               PRICE_MISMATCH, PRICE_STALE, SERIAL_INVALID_FORMAT, ZERO_TOTAL]
         invalid_serials:
           type: array
-          description: Kode yang dipindai tetapi bukan format serial (apa adanya)
+          description: Scanned codes that are not in serial format (as sent)
           items: { type: string }
         conflicts:
           type: array
@@ -2899,14 +2926,14 @@ components:
       type: object
       required: [index, client_txn_id, device_seq, status, result, detail]
       properties:
-        index: { type: integer, description: "Posisi transaksi di request (hasil diurutkan menurut device_seq)" }
-        client_txn_id: { type: string, format: uuid, description: "Nil UUID kalau identitas item tidak bisa dibaca" }
+        index: { type: integer, description: "Position of the transaction in the request (results are ordered by device_seq)" }
+        client_txn_id: { type: string, format: uuid, description: "Nil UUID when the item's identity cannot be read" }
         device_seq: { type: integer, format: int64 }
         status: { type: string, enum: [ACCEPTED, ACCEPTED_WITH_CONFLICT, REJECTED, DUPLICATE, RETRY] }
         result:
           type: string
           enum: [ACCEPTED, ACCEPTED_WITH_CONFLICT, REJECTED, ""]
-          description: "Hasil tersimpan (untuk DUPLICATE = hasil asli); kosong untuk RETRY"
+          description: "Stored result (for DUPLICATE = the original result); empty for RETRY"
         detail: { $ref: "#/components/schemas/PosSyncDetail" }
     PosSyncResponse:
       type: object
@@ -2929,7 +2956,7 @@ components:
         resolution:
           type: string
           enum: [CUSTOMER_COMPENSATED, ORDER_CANCELLED, STOCK_RECOUNTED, SERIAL_RECORD_CORRECTED, FALSE_ALARM, OTHER]
-        note: { type: string, minLength: 3, maxLength: 1000, description: "Wajib; tanpa karakter kontrol selain \\n dan \\t" }
+        note: { type: string, minLength: 3, maxLength: 1000, description: "Required; no control characters other than \\n and \\t" }
     # ==== [/pos] ====
 
     # ==== [commandcenter] ====
@@ -2960,12 +2987,12 @@ components:
             earliest_runout_date:
               type: [string, "null"]
               format: date
-              description: Tanggal habis paling dekat di antara item CRITICAL/WARNING (zona lokasi)
+              description: Earliest stock-out date among CRITICAL/WARNING items (location time zone)
         stock:
           type: object
           required: [out_of_stock_items, out_of_stock_locations]
           properties:
-            out_of_stock_items: { type: integer, format: int64, description: "SKU-lokasi milik sendiri dengan available 0" }
+            out_of_stock_items: { type: integer, format: int64, description: "Own SKU-location pairs with available 0" }
             out_of_stock_locations: { type: integer, format: int64 }
         anomalies:
           type: object
@@ -2981,7 +3008,7 @@ components:
                 HIGH: { type: integer, format: int64 }
                 CRITICAL: { type: integer, format: int64 }
             top_party:
-              description: Party dengan anomali OPEN terbanyak
+              description: Party with the most OPEN anomalies
               oneOf:
                 - $ref: "#/components/schemas/CCPartyCount"
                 - type: "null"
@@ -2995,7 +3022,7 @@ components:
           required: [total, offline]
           properties:
             total: { type: integer, format: int64 }
-            offline: { type: integer, format: int64, description: "Toko dengan sync_state OFFLINE" }
+            offline: { type: integer, format: int64, description: "Stores with sync_state OFFLINE" }
     CCPartyCount:
       type: object
       required: [party_id, party_name, open_count]
@@ -3023,7 +3050,7 @@ components:
         available_qty: { type: integer, format: int64 }
         is_estimate:
           type: boolean
-          description: true untuk lokasi bukan milik sendiri; angkanya perkiraan dari sell-in tercatat
+          description: true for locations that are not owned; the figure is an estimate from recorded sell-in
         updated_at: { type: string, format: date-time }
     CCStockPage:
       type: object
@@ -3048,22 +3075,22 @@ components:
         product_name: { type: string }
         available_qty: { type: integer, format: int64 }
         is_estimate: { type: boolean }
-        sold_qty: { type: integer, format: int64, description: "Unit terjual dalam jendela 28 hari" }
+        sold_qty: { type: integer, format: int64, description: "Units sold in the 28-day window" }
         history_days:
           type: [integer, "null"]
           minimum: 1
           maximum: 28
-          description: Pembagi rata-rata = hari sejak mutasi pertama (lokasi, produk); null tanpa penjualan
-        avg_daily_sales: { type: [number, "null"], description: "null tanpa riwayat penjualan" }
-        days_of_inventory: { type: [number, "null"], description: "null tanpa riwayat penjualan" }
-        runout_date: { type: [string, "null"], format: date, description: "Hari ini (zona lokasi) + DOI; null kalau DOI null atau > 3650" }
+          description: Average divisor = days since the first movement for (location, product); null without sales
+        avg_daily_sales: { type: [number, "null"], description: "null without sales history" }
+        days_of_inventory: { type: [number, "null"], description: "null without sales history" }
+        runout_date: { type: [string, "null"], format: date, description: "Today (location time zone) + DOI; null when DOI is null or > 3650" }
         level: { $ref: "#/components/schemas/CCRunoutLevel" }
         reasons:
           type: array
           items:
             type: string
             enum: [STOCK_OUT, BELOW_LEAD_TIME, BELOW_SAFETY_DAYS, BELOW_MIN_QTY, NO_SALES_HISTORY, SHORT_HISTORY, NO_POLICY]
-        has_policy: { type: boolean, description: "false = tanpa stock_policies; hanya aturan stok habis yang berlaku" }
+        has_policy: { type: boolean, description: "false = no stock_policies; only the stock-out rule applies" }
         min_qty: { type: [integer, "null"], format: int64 }
         lead_time_days: { type: [integer, "null"] }
         safety_days: { type: [integer, "null"] }
@@ -3121,10 +3148,10 @@ components:
           type: [string, "null"]
           maxLength: 1000
           description: >
-            Wajib untuk RESOLVED dan FALSE_POSITIVE (disimpan sebagai resolution_note dan di
-            audit). Pada ACK boleh diisi, tetapi hanya dicatat di audit_logs.reason, tidak
-            disimpan di anomali. Spasi di tepi dibuang. Karakter kontrol (NUL, ESC, CR, DEL, C1)
-            ditolak 422 invalid_characters; baris baru dan tab diizinkan.
+            Required for RESOLVED and FALSE_POSITIVE (stored as resolution_note and in the
+            audit log). Optional for ACK, where it is only recorded in audit_logs.reason, not on
+            the anomaly. Leading and trailing spaces are trimmed. Control characters (NUL, ESC,
+            CR, DEL, C1) are rejected with 422 invalid_characters; newline and tab are allowed.
     CCConflictItem:
       type: object
       required: [id, kind, status, location_id, location_code, location_name, product_id, sku, product_name, qty, pos_transaction_id,
@@ -3168,20 +3195,20 @@ components:
         coverage_mode:
           type: [string, "null"]
           enum: [NATIONAL, SELECTED, null]
-          description: null = distributor belum punya wilayah resmi yang berlaku (rasio tidak dihitung)
+          description: null = the distributor has no official territory in effect (ratio not computed)
         total_scans: { type: integer, format: int64 }
         located_scans: { type: integer, format: int64 }
         unlocated_scans: { type: integer, format: int64 }
-        judged_scans: { type: integer, format: int64, description: "Scan yang bisa dinilai dalam/luar wilayah (dasar rasio)" }
+        judged_scans: { type: integer, format: int64, description: "Scans that can be judged in or out of territory (ratio base)" }
         unjudged_scans:
           type: integer
           format: int64
-          description: Scan berwilayah yang tidak bisa dinilai (wilayah scan lebih kasar dari wilayah resmi, atau tanpa wilayah resmi saat scan)
+          description: Scans with a region that cannot be judged (scan region coarser than the official territory, or no official territory at scan time)
         out_of_territory_scans: { type: [integer, "null"], format: int64 }
-        leak_ratio: { type: [number, "null"], description: "Luar wilayah ÷ scan yang dinilai, 4 desimal" }
+        leak_ratio: { type: [number, "null"], description: "Out of territory ÷ judged scans, 4 decimals" }
         sample_too_small: { type: boolean }
         test_buy_scans: { type: integer, format: int64 }
-        test_buy_hits: { type: integer, format: int64, description: "Scan TEST_BUY di luar wilayah (sinyal kuat)" }
+        test_buy_hits: { type: integer, format: int64, description: "Out-of-territory TEST_BUY scans (strong signal)" }
         above_baseline: { type: boolean }
         alert: { type: boolean }
     CCLeakageResponse:
@@ -3231,14 +3258,14 @@ components:
           type: integer
         code:
           type: string
-          description: Kode stabil untuk dipetakan ke pesan di frontend
+          description: Stable machine-readable code; never changes with the wording
         detail:
           type: string
         request_id:
           type: string
         errors:
           type: array
-          description: Diisi untuk 422 validation_failed
+          description: Filled for 422 validation_failed
           items:
             $ref: "#/components/schemas/FieldError"
     FieldError:
@@ -3247,7 +3274,7 @@ components:
       properties:
         field:
           type: string
-          description: Path JSON, mis. lines[0].qty
+          description: JSON path, e.g. lines[0].qty
         code:
           type: string
         message:

@@ -313,7 +313,7 @@ var errInvFactSaleRetry = errors.New("reservasi sedang dipegang transaksi lain; 
 // ErrStockContended: reservasi di lokasi itu terus dipegang transaksi lain.
 // Bisa di-retry dengan transaksi baru; TIDAK berarti penjualan ditolak karena stok.
 var ErrStockContended = apperror.New(http.StatusServiceUnavailable, "stock_contended",
-	"Stok sedang diproses", "Reservasi di lokasi ini sedang diubah transaksi lain. Coba lagi beberapa saat lagi.")
+	"Stok sedang diproses", "Stok di lokasi ini sedang diubah transaksi lain. Coba lagi dalam beberapa detik.")
 
 func invValidateFactSale(in FactSaleInput) error {
 	if in.Qty <= 0 || in.Qty > MaxMovementQty || in.LocationID == uuid.Nil || in.ProductID == uuid.Nil ||
@@ -502,7 +502,7 @@ func (s *InventoryService) recordFactSaleOnce(ctx context.Context, tx *gorm.DB, 
 
 	if available < in.Qty {
 		d := in.Qty - available
-		reason := fmt.Sprintf("Penjualan fakta %s melebihi stok fisik tercatat sebanyak %d", in.RefType, d)
+		reason := fmt.Sprintf("Penjualan %s melebihi stok fisik tercatat sebanyak %s; perlu stock opname", in.RefType, apperror.FormatNumber(d))
 		if _, err := s.ApplyMovement(ctx, tx, MovementInput{
 			LocationID: in.LocationID, ProductID: in.ProductID, Type: MovementAdjustDiscrepancy, Qty: d,
 			RefType: in.RefType, RefID: in.RefID, IdempotencyKey: in.IdempotencyKey + ":discrepancy",
@@ -589,7 +589,7 @@ func invPickPreempt(cands []repository.PreemptCandidate, need int64) []repositor
 // preemptReservation mengalahkan satu reservasi demi penjualan fakta.
 func (s *InventoryService) preemptReservation(ctx context.Context, tx *gorm.DB, c repository.PreemptCandidate,
 	in FactSaleInput, now time.Time) (PreemptedReservation, error) {
-	reason := fmt.Sprintf("Dikalahkan penjualan fakta %s %s", in.RefType, in.RefID)
+	reason := fmt.Sprintf("Reservasi terpakai penjualan %s %s", in.RefType, in.RefID)
 	if _, err := s.ApplyMovement(ctx, tx, MovementInput{
 		LocationID: c.LocationID, ProductID: c.ProductID, Type: MovementPreempt, Qty: c.Qty,
 		RefType: "ORDER", RefID: c.OrderID, IdempotencyKey: "reservation:" + c.ID.String() + ":preempt",
@@ -697,7 +697,7 @@ func (s *InventoryService) ListBalances(ctx context.Context, p *auth.Principal, 
 		loc, prod, err := DecodeBalanceCursor(q.Cursor)
 		if err != nil {
 			return BalancePage{}, apperror.Validation(apperror.FieldError{
-				Field: "cursor", Code: "invalid_cursor", Message: "cursor tidak valid",
+				Field: "cursor", Code: "invalid_cursor", Message: "posisi halaman tidak valid; muat ulang dari halaman pertama",
 			})
 		}
 		f.AfterLocationID, f.AfterProductID = &loc, &prod
@@ -804,12 +804,12 @@ func (s *InventoryService) staffChange(ctx context.Context, p *auth.Principal, i
 	reason, n := invTrimmed(in.Reason)
 	if n < invMinReasonLen || n > invMaxReasonLen {
 		return StockChangeResult{}, apperror.Validation(apperror.FieldError{
-			Field: "reason", Code: "length", Message: fmt.Sprintf("wajib diisi %d-%d karakter", invMinReasonLen, invMaxReasonLen),
+			Field: "reason", Code: "length", Message: fmt.Sprintf("wajib diisi, %d sampai %d karakter", invMinReasonLen, invMaxReasonLen),
 		})
 	}
 	if in.Qty == 0 || in.Qty > MaxMovementQty || in.Qty < -MaxMovementQty {
 		return StockChangeResult{}, apperror.Validation(apperror.FieldError{
-			Field: "qty", Code: "range", Message: fmt.Sprintf("tidak boleh 0 dan maksimal %d", MaxMovementQty),
+			Field: "qty", Code: "range", Message: "harus antara " + apperror.FormatNumber(-MaxMovementQty) + " dan " + apperror.FormatNumber(MaxMovementQty) + ", selain 0",
 		})
 	}
 	if in.IdempotencyKey == "" {

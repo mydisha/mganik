@@ -76,17 +76,17 @@ const (
 
 var (
 	ErrPosDeviceNotFound = apperror.New(http.StatusNotFound, "device_not_found",
-		"Device tidak ditemukan", "Device POS tidak ada.")
+		"Perangkat tidak ditemukan", "Perangkat kasir yang diminta tidak ada.")
 	ErrPosLocationNotStore = apperror.New(http.StatusUnprocessableEntity, "location_not_store",
-		"Lokasi bukan toko", "Device POS hanya bisa dipasang di toko sendiri (OWN_STORE) yang aktif.")
+		"Lokasi bukan toko", "Perangkat kasir hanya bisa dipasang di toko milik sendiri yang aktif.")
 	ErrPosBatchTooLarge = apperror.New(http.StatusUnprocessableEntity, "batch_too_large",
-		"Batch terlalu besar", "Jumlah transaksi per sync melebihi batas; kirim dalam beberapa batch.")
+		"Kiriman terlalu besar", "Jumlah transaksi dalam satu sinkronisasi melebihi batas. Kirim dalam beberapa bagian.")
 	ErrPosSigningKeyMissing = apperror.New(http.StatusConflict, "signing_key_missing",
-		"Signing key belum ada", "Device ini belum punya signing key; provisioning ulang device.")
+		"Kunci perangkat belum ada", "Perangkat kasir ini belum punya kunci tanda tangan. Daftarkan ulang perangkatnya.")
 	ErrPosConflictNotFound = apperror.New(http.StatusNotFound, "conflict_not_found",
-		"Konflik tidak ditemukan", "Konflik alokasi tidak ada atau di luar cakupan akun ini.")
+		"Konflik tidak ditemukan", "Konflik alokasi ini tidak ada atau di luar akses akun ini.")
 	ErrPosConflictNotOpen = apperror.New(http.StatusConflict, "invalid_transition",
-		"Konflik sudah ditutup", "Hanya konflik berstatus OPEN yang bisa diselesaikan.")
+		"Konflik sudah ditutup", "Konflik ini sudah diselesaikan, otomatis atau oleh staf lain. Muat ulang untuk melihat penyelesaiannya.")
 	ErrPosResolutionNotApplicable = apperror.New(http.StatusConflict, "resolution_not_applicable",
-		"Resolusi tidak sesuai", "ORDER_CANCELLED hanya untuk konflik yang order terkaitnya sudah CANCELLED atau EXPIRED.")
+		"Penyelesaian tidak sesuai", "ORDER_CANCELLED hanya bisa dipilih kalau konflik ini punya order terkait dan order itu sudah dibatalkan atau kedaluwarsa. Pilih penyelesaian lain.")
 )

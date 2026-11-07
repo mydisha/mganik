@@ -171,13 +171,13 @@ func (s *PosService) Sync(ctx context.Context, p *auth.Principal, in PosSyncInpu
 	}
 	if in.Transactions == nil {
 		return PosSyncOutput{}, apperror.Validation(apperror.FieldError{
-			Field: "transactions", Code: "required", Message: "wajib diisi (boleh array kosong)"})
+			Field: "transactions", Code: "required", Message: "wajib ada (boleh daftar kosong)"})
 	}
 	if len(in.Transactions) > s.cfg.SyncMaxBatch {
 		e := apperror.Wrap(ErrPosBatchTooLarge, ErrPosBatchTooLarge.Status, ErrPosBatchTooLarge.Code,
 			ErrPosBatchTooLarge.Title, ErrPosBatchTooLarge.Detail)
 		e.Fields = []apperror.FieldError{{Field: "transactions", Code: "max",
-			Message: fmt.Sprintf("maksimal %d transaksi per batch", s.cfg.SyncMaxBatch)}}
+			Message: fmt.Sprintf("maksimal %d transaksi per sinkronisasi", s.cfg.SyncMaxBatch)}}
 		return PosSyncOutput{}, e
 	}
 	items := posIdentify(in.Transactions)
@@ -286,7 +286,7 @@ func posIdentify(raws []json.RawMessage) []posItem {
 		}
 		if len(fields) > 0 {
 			items[i].identErr = &posRejection{Reason: PosReasonInvalidPayload,
-				Message: "client_txn_id/device_seq tidak valid; transaksi tidak disimpan.", Errors: fields}
+				Message: "Identitas transaksi (client_txn_id atau device_seq) tidak valid, jadi transaksi tidak disimpan. Laporkan ke kepala toko.", Errors: fields}
 		}
 	}
 	return items
@@ -300,7 +300,7 @@ func posPrepare(it *posItem, signer *domain.PosSigner, maxSerials int) {
 	if err != nil {
 		h := sha256.Sum256(it.raw)
 		it.hash = h[:]
-		it.reject = &posRejection{Reason: PosReasonInvalidPayload, Message: "Transaksi bukan JSON kanonis yang valid (angka harus bilangan bulat, tanpa key ganda)."}
+		it.reject = &posRejection{Reason: PosReasonInvalidPayload, Message: "Data transaksi rusak: angka harus bilangan bulat dan tidak boleh ada field ganda. Transaksi tidak disimpan; laporkan ke kepala toko."}
 		return
 	}
 	h := domain.PosPayloadHash(canonical)
@@ -311,7 +311,7 @@ func posPrepare(it *posItem, signer *domain.PosSigner, maxSerials int) {
 	}
 	_ = json.Unmarshal(it.raw, &sig)
 	if sig.Signature == nil || !signer.Verify(canonical, *sig.Signature) {
-		it.reject = &posRejection{Reason: PosReasonInvalidSignature, Message: "Signature transaksi tidak valid untuk device ini."}
+		it.reject = &posRejection{Reason: PosReasonInvalidSignature, Message: "Tanda tangan transaksi tidak cocok dengan perangkat kasir ini. Transaksi tidak disimpan; laporkan ke kepala toko."}
 		return
 	}
 	it.signatureOK = true
@@ -319,7 +319,7 @@ func posPrepare(it *posItem, signer *domain.PosSigner, maxSerials int) {
 		// Ditandatangani device sendiri (bukan manipulasi), tetapi teksnya
 		// bukan Unicode valid: tolak sebagai payload rusak, tanpa anomali.
 		it.reject = &posRejection{Reason: PosReasonInvalidPayload,
-			Message: "Teks memuat surrogate UTF-16 tunggal (bukan Unicode valid)."}
+			Message: "Ada teks yang bukan Unicode valid (surrogate UTF-16 tunggal)."}
 		return
 	}
 
@@ -327,7 +327,7 @@ func posPrepare(it *posItem, signer *domain.PosSigner, maxSerials int) {
 	dec := json.NewDecoder(bytes.NewReader(it.raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&pl); err != nil {
-		it.reject = &posRejection{Reason: PosReasonInvalidPayload, Message: "Isi transaksi tidak sesuai skema (tipe salah atau field tidak dikenal)."}
+		it.reject = &posRejection{Reason: PosReasonInvalidPayload, Message: "Isi transaksi tidak sesuai format: ada tipe data yang salah atau field yang tidak dikenal."}
 		return
 	}
 	it.payload = &pl
@@ -353,16 +353,16 @@ func posValidate(pl *posTxnPayload, maxSerials int) (posTotals, *posRejection) {
 		add("occurred_at", "required", "wajib diisi (RFC 3339)")
 	}
 	if pl.PriceListVersion < 1 || pl.PriceListVersion > posSafeInt {
-		add("price_list_version", "range", "wajib bilangan bulat >= 1")
+		add("price_list_version", "range", "wajib bilangan bulat, minimal 1")
 	}
 	if n := len([]rune(pl.Note)); n > PosMaxNoteRunes {
 		add("note", "max", fmt.Sprintf("maksimal %d karakter", PosMaxNoteRunes))
 	}
 	if posBadText(pl.Note) {
-		add("note", "invalid_characters", "memuat karakter kontrol yang tidak diizinkan")
+		add("note", "invalid_characters", "memuat karakter tak terlihat yang tidak diizinkan")
 	}
 	if len(pl.Lines) == 0 || len(pl.Lines) > PosMaxLines {
-		add("lines", "length", fmt.Sprintf("wajib berisi 1-%d baris", PosMaxLines))
+		add("lines", "length", fmt.Sprintf("wajib berisi 1 sampai %d baris", PosMaxLines))
 	}
 	seenSerial := map[string]string{}
 	serialCount := 0
@@ -373,17 +373,17 @@ func posValidate(pl *posTxnPayload, maxSerials int) (posTotals, *posRejection) {
 		}
 		lineOK := true
 		if l.Qty < 1 || l.Qty > PosMaxLineQty {
-			add(f("qty"), "range", fmt.Sprintf("harus 1-%d", PosMaxLineQty))
+			add(f("qty"), "range", "harus 1 sampai "+apperror.FormatNumber(PosMaxLineQty))
 			lineOK = false
 		}
 		if l.UnitPrice < 0 || l.UnitPrice > PosMaxUnitPrice {
-			add(f("unit_price"), "range", fmt.Sprintf("harus 0-%d", int64(PosMaxUnitPrice)))
+			add(f("unit_price"), "range", "harus Rp0 sampai "+apperror.FormatRupiah(PosMaxUnitPrice))
 			lineOK = false
 		}
 		if lineOK {
 			gross := l.Qty * l.UnitPrice
 			if l.Discount < 0 || l.Discount > gross {
-				add(f("discount"), "range", "harus 0 sampai qty × unit_price")
+				add(f("discount"), "range", "harus Rp0 sampai qty × harga satuan")
 			} else {
 				t.Subtotal += gross
 				t.Discount += l.Discount
@@ -398,14 +398,15 @@ func posValidate(pl *posTxnPayload, maxSerials int) (posTotals, *posRejection) {
 			norm, _ := domain.NormalizeSerialCode(code)
 			switch {
 			case norm == "" || len(code) > PosMaxSerialLen:
-				add(fs, "length", fmt.Sprintf("wajib 1-%d karakter", PosMaxSerialLen))
+				add(fs, "length", fmt.Sprintf("wajib 1 sampai %d karakter", PosMaxSerialLen))
 			case posBadText(code) || strings.ContainsAny(code, "\n\t"):
-				add(fs, "invalid_characters", "memuat karakter kontrol yang tidak diizinkan")
+				add(fs, "invalid_characters", "memuat karakter tak terlihat yang tidak diizinkan")
 			default:
 				if prev, dup := seenSerial[norm]; dup {
-					add(fs, "duplicate", "serial sama dengan "+prev)
+					add(fs, "duplicate", "serial ini sudah dipindai di "+prev)
 				} else {
-					seenSerial[norm] = fs
+					// Disimpan sebagai posisi yang bisa dibaca kasir (1-based).
+					seenSerial[norm] = fmt.Sprintf("baris %d, serial ke-%d", i+1, j+1)
 				}
 			}
 		}
@@ -423,7 +424,7 @@ func posValidate(pl *posTxnPayload, maxSerials int) (posTotals, *posRejection) {
 	for i, pay := range pl.Payments {
 		f := func(s string) string { return fmt.Sprintf("payments[%d].%s", i, s) }
 		if pay.Amount < 1 || pay.Amount > PosMaxPaymentValue {
-			add(f("amount"), "range", fmt.Sprintf("harus 1-%d", int64(PosMaxPaymentValue)))
+			add(f("amount"), "range", "harus Rp1 sampai "+apperror.FormatRupiah(PosMaxPaymentValue))
 			continue
 		}
 		switch pay.Method {
@@ -433,26 +434,26 @@ func posValidate(pl *posTxnPayload, maxSerials int) (posTotals, *posRejection) {
 				add(f("method"), "duplicate", "maksimal satu pembayaran tunai per transaksi")
 			}
 			if pay.ApprovalRef != "" {
-				add(f("approval_ref"), "forbidden", "tidak dipakai untuk tunai")
+				add(f("approval_ref"), "forbidden", "harus kosong untuk pembayaran tunai")
 			}
 			t.Cash += pay.Amount
 		case posMethodEDC, posMethodQRIS:
 			ref := strings.TrimSpace(pay.ApprovalRef)
 			switch {
 			case ref == "" || len(pay.ApprovalRef) > PosMaxApprovalLen || ref != pay.ApprovalRef:
-				add(f("approval_ref"), "length", fmt.Sprintf("wajib 1-%d karakter tanpa spasi di tepi", PosMaxApprovalLen))
+				add(f("approval_ref"), "length", fmt.Sprintf("wajib 1 sampai %d karakter, tanpa spasi di awal atau akhir", PosMaxApprovalLen))
 			case posBadText(ref) || strings.ContainsAny(ref, "\n\t"):
-				add(f("approval_ref"), "invalid_characters", "memuat karakter kontrol yang tidak diizinkan")
+				add(f("approval_ref"), "invalid_characters", "memuat karakter tak terlihat yang tidak diizinkan")
 			default:
 				k := pay.Method + "\x00" + ref
 				if j, dup := seenRef[k]; dup {
-					add(f("approval_ref"), "duplicate", fmt.Sprintf("sama dengan payments[%d]", j))
+					add(f("approval_ref"), "duplicate", fmt.Sprintf("sama dengan pembayaran ke-%d", j+1))
 				}
 				seenRef[k] = i
 			}
 			t.NonCash += pay.Amount
 		default:
-			add(f("method"), "oneof", "harus salah satu dari: CASH EDC QRIS")
+			add(f("method"), "oneof", "harus salah satu dari: CASH, EDC, QRIS")
 		}
 	}
 	t.Paid = t.Cash + t.NonCash
@@ -462,22 +463,23 @@ func posValidate(pl *posTxnPayload, maxSerials int) (posTotals, *posRejection) {
 	}
 	if pl.Total != t.Total {
 		return t, &posRejection{Reason: PosReasonTotalMismatch,
-			Message: fmt.Sprintf("Total %d tidak sama dengan Σ(qty × harga − diskon) = %d.", pl.Total, t.Total),
-			Errors:  []apperror.FieldError{{Field: "total", Code: "total_mismatch", Message: fmt.Sprintf("harus %d", t.Total)}}}
+			Message: fmt.Sprintf("Total transaksi %s tidak sama dengan jumlah baris (qty × harga − diskon) %s.",
+				apperror.FormatRupiah(pl.Total), apperror.FormatRupiah(t.Total)),
+			Errors: []apperror.FieldError{{Field: "total", Code: "total_mismatch", Message: "harus " + apperror.FormatRupiah(t.Total)}}}
 	}
 	if t.Total > posSafeInt {
-		return t, &posRejection{Reason: PosReasonValidationFailed, Message: "Total melebihi batas aman.",
+		return t, &posRejection{Reason: PosReasonValidationFailed, Message: "Total transaksi melebihi batas angka yang bisa diproses.",
 			Errors: []apperror.FieldError{{Field: "total", Code: "range", Message: "melebihi 2^53-1"}}}
 	}
 	if t.Paid < t.Total {
 		return t, &posRejection{Reason: PosReasonPaymentInsufficient,
-			Message: fmt.Sprintf("Pembayaran %d kurang dari total %d.", t.Paid, t.Total),
-			Errors:  []apperror.FieldError{{Field: "payments", Code: "payment_insufficient", Message: fmt.Sprintf("kurang %d", t.Total-t.Paid)}}}
+			Message: fmt.Sprintf("Pembayaran %s kurang dari total %s.", apperror.FormatRupiah(t.Paid), apperror.FormatRupiah(t.Total)),
+			Errors:  []apperror.FieldError{{Field: "payments", Code: "payment_insufficient", Message: "kurang " + apperror.FormatRupiah(t.Total-t.Paid)}}}
 	}
 	// Kembalian hanya dari tunai: non-tunai tidak boleh melebihi total.
 	if t.NonCash > t.Total {
 		return t, &posRejection{Reason: PosReasonValidationFailed,
-			Message: "Pembayaran non-tunai melebihi total; kembalian hanya dari tunai.",
+			Message: "Pembayaran non-tunai melebihi total belanja. Kembalian hanya bisa diberikan dari pembayaran tunai.",
 			Errors:  []apperror.FieldError{{Field: "payments", Code: "non_cash_overpaid", Message: "non-tunai melebihi total"}}}
 	}
 	t.Change = t.Paid - t.Total
@@ -485,10 +487,10 @@ func posValidate(pl *posTxnPayload, maxSerials int) (posTotals, *posRejection) {
 }
 
 func posRejectionFor(fields []apperror.FieldError) *posRejection {
-	r := &posRejection{Reason: PosReasonValidationFailed, Message: "Isi transaksi tidak valid.", Errors: fields}
+	r := &posRejection{Reason: PosReasonValidationFailed, Message: "Isi transaksi tidak valid. Periksa daftar isian yang ditandai.", Errors: fields}
 	for _, f := range fields {
 		if f.Code == "invalid_characters" {
-			r.Reason, r.Message = PosReasonInvalidCharacters, "Teks memuat karakter kontrol (misal NUL) yang tidak diizinkan."
+			r.Reason, r.Message = PosReasonInvalidCharacters, "Ada teks yang memuat karakter tak terlihat (karakter kontrol) yang tidak diizinkan."
 			break
 		}
 	}
@@ -664,8 +666,8 @@ func (s *PosService) processTx(ctx context.Context, tx *gorm.DB, b *posBatch, it
 	// diterima (penjualan fakta) dengan flag CASHIER_INACTIVE + anomali.
 	if st, ok := b.cashiers[pl.CashierID]; !ok || !st.HasRole {
 		return reject(&posRejection{Reason: PosReasonCashierNotAllowed,
-			Message: "Kasir tidak dikenal atau tidak punya izin pos.sync di lokasi device ini.",
-			Errors:  []apperror.FieldError{{Field: "cashier_id", Code: "cashier_not_allowed", Message: "tidak diizinkan di lokasi ini"}}})
+			Message: "Kasir tidak dikenal atau tidak terdaftar sebagai kasir di toko perangkat ini. Minta kepala toko memeriksa akses kasirnya.",
+			Errors:  []apperror.FieldError{{Field: "cashier_id", Code: "cashier_not_allowed", Message: "tidak terdaftar di toko ini"}}})
 	}
 	var unknown []apperror.FieldError
 	for i, l := range pl.Lines {
@@ -674,7 +676,7 @@ func (s *PosService) processTx(ctx context.Context, tx *gorm.DB, b *posBatch, it
 		}
 	}
 	if len(unknown) > 0 {
-		return reject(&posRejection{Reason: PosReasonUnknownProduct, Message: "Produk tidak ada di katalog.", Errors: unknown})
+		return reject(&posRejection{Reason: PosReasonUnknownProduct, Message: "Ada produk yang tidak terdaftar di katalog.", Errors: unknown})
 	}
 	return s.accept(ctx, tx, b, it, serverID, res)
 }
@@ -706,7 +708,7 @@ func (s *PosService) existing(tx *gorm.DB, b *posBatch, it *posItem, res PosTxnR
 			return res, err
 		}
 		return posUnstored(res, &posRejection{Reason: PosReasonDeviceSeqReused,
-			Message: "device_seq sudah dipakai transaksi lain dari device ini."}), nil
+			Message: "Nomor urut transaksi (device_seq) sudah dipakai transaksi lain dari perangkat ini, jadi transaksi ini tidak disimpan."}), nil
 	}
 	// client_txn_id dipakai ulang dengan isi berbeda. Transaksi asli tetap
 	// berlaku. Seq transaksi ini (kalau berbeda dan masih kosong) diisi
@@ -715,7 +717,7 @@ func (s *PosService) existing(tx *gorm.DB, b *posBatch, it *posItem, res PosTxnR
 		return res, err
 	}
 	d := posDetail{Reason: PosReasonIdempotencyKeyReused, ReceivedAt: b.now,
-		Message: fmt.Sprintf("client_txn_id sudah dipakai transaksi seq %d dengan isi berbeda (server_txn_id %s).",
+		Message: fmt.Sprintf("ID transaksi (client_txn_id) sudah dipakai transaksi nomor %d dengan isi berbeda (server_txn_id %s). Transaksi asli tetap berlaku.",
 			stored.DeviceSeq, stored.ID)}
 	if it.seq != stored.DeviceSeq {
 		tombID := invNewID()

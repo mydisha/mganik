@@ -43,11 +43,11 @@ var sessionTokenLen = base64.RawURLEncoding.EncodedLen(sessionTokenBytes)
 // Error sesi/token yang dikirim ke klien.
 var (
 	ErrSessionExpired = apperror.New(http.StatusUnauthorized, "session_expired",
-		"Sesi berakhir", "Sesi sudah berakhir atau dicabut. Silakan masuk lagi.")
+		"Sesi berakhir", "Sesi Anda sudah berakhir. Masuk lagi untuk melanjutkan.")
 	ErrInvalidToken = apperror.New(http.StatusUnauthorized, "invalid_token",
-		"Token tidak valid", "Token perangkat tidak valid atau sudah dicabut.")
+		"Perangkat tidak dikenali", "Token perangkat kasir ini tidak valid atau sudah dicabut. Minta kepala toko mendaftarkan ulang perangkatnya.")
 	ErrCashierNotAllowed = apperror.New(http.StatusForbidden, "cashier_not_allowed",
-		"Kasir tidak diizinkan", "Kasir ini tidak terdaftar untuk lokasi perangkat.")
+		"Kasir tidak diizinkan", "Kasir ini tidak terdaftar di toko perangkat ini. Minta kepala toko memeriksa akses kasirnya.")
 )
 
 // errSessionInvalid: token sesi tidak dikenal, kedaluwarsa, atau dicabut.

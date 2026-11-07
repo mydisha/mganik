@@ -53,7 +53,7 @@ type MintResult struct {
 func (s *SerialService) Mint(ctx context.Context, p *auth.Principal, in MintInput) (MintResult, error) {
 	if in.Qty <= 0 || in.Qty > MaxMintQty {
 		return MintResult{}, apperror.Validation(apperror.FieldError{
-			Field: "qty", Code: "max", Message: fmt.Sprintf("harus 1 sampai %d", MaxMintQty)})
+			Field: "qty", Code: "max", Message: "harus 1 sampai " + apperror.FormatNumber(MaxMintQty)})
 	}
 	if in.LevelCode == domain.LevelUnit && len(s.pepper) == 0 {
 		return MintResult{}, errors.New("CLAIM_PEPPER kosong: PIN klaim tidak bisa di-hash")
@@ -248,7 +248,7 @@ func (s *SerialService) Commission(ctx context.Context, p *auth.Principal, batch
 		for _, r := range rows {
 			if !lc.CanTransition(r.Status, domain.SerialCommissioned) {
 				transErrs = append(transErrs, idx.fieldError(r.Code, "invalid_transition",
-					fmt.Sprintf("status %s tidak bisa di-commission", r.Status)))
+					fmt.Sprintf("berstatus %s, jadi labelnya tidak bisa diikat ke batch", r.Status)))
 				continue
 			}
 			if r.CodeBatchID != nil {
@@ -333,7 +333,7 @@ func (s *SerialService) ReceiveProduction(ctx context.Context, p *auth.Principal
 		for _, n := range tree {
 			if n.Status != domain.SerialCommissioned || !lc.CanTransition(n.Status, domain.SerialInStock) {
 				fields = append(fields, apperror.FieldError{Field: "codes", Code: "invalid_transition",
-					Message: fmt.Sprintf("serial %s berstatus %s, bukan COMMISSIONED", n.Code, n.Status)})
+					Message: fmt.Sprintf("serial %s berstatus %s; hanya serial COMMISSIONED yang bisa diterima", n.Code, n.Status)})
 			}
 		}
 		if len(fields) > 0 {

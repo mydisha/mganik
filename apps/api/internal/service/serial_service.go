@@ -234,13 +234,13 @@ func (s *SerialService) TransitionSerials(ctx context.Context, tx *gorm.DB, code
 				continue
 			}
 			if opt.RequireLocation != nil && (r.LocationID == nil || *r.LocationID != *opt.RequireLocation) {
-				locErrs = append(locErrs, idx.fieldError(r.Code, "serial_wrong_location", "serial tidak berada di lokasi ini"))
+				locErrs = append(locErrs, idx.fieldError(r.Code, "serial_wrong_location", "tercatat di lokasi lain"))
 				continue
 			}
 			t, ok := lc.Lookup(r.Status, to)
 			if !ok || r.Status == to || (len(only) > 0 && !only[r.Status]) {
 				transErrs = append(transErrs, idx.fieldError(r.Code, "invalid_transition",
-					fmt.Sprintf("status %s tidak bisa menjadi %s", r.Status, to)))
+					fmt.Sprintf("berstatus %s, tidak bisa diubah menjadi %s", r.Status, to)))
 				continue
 			}
 			if opt.Principal != nil && t.Permission != "" && !opt.Principal.Can(t.Permission) {
@@ -376,7 +376,7 @@ func rootsOf(idx serialCodeIndex, rows []model.SerialUnit) ([]model.SerialUnit, 
 		case inSet[*r.ParentID]:
 			// ikut lewat induknya
 		default:
-			fields = append(fields, idx.fieldError(r.Code, "packed_in_parent", "serial masih di dalam kemasan induk"))
+			fields = append(fields, idx.fieldError(r.Code, "packed_in_parent", "masih di dalam kemasan induk"))
 		}
 	}
 	if len(fields) > 0 {

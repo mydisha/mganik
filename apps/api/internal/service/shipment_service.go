@@ -109,7 +109,7 @@ func (s *SerialService) CreateShipment(ctx context.Context, p *auth.Principal, i
 		for _, n := range tree {
 			if n.LocationID == nil || *n.LocationID != from.ID {
 				locErrs = append(locErrs, apperror.FieldError{Field: "codes", Code: "serial_wrong_location",
-					Message: fmt.Sprintf("serial %s tidak berada di lokasi asal", n.Code)})
+					Message: fmt.Sprintf("serial %s tidak tercatat di lokasi asal", n.Code)})
 				continue
 			}
 			if !lc.CanTransition(n.Status, domain.SerialInTransit) {
@@ -140,7 +140,7 @@ func (s *SerialService) CreateShipment(ctx context.Context, p *auth.Principal, i
 		for _, r := range roots {
 			if r.ProductID == nil {
 				return serialErrWithFields(ErrSerialProductNotFound, []apperror.FieldError{
-					idx.fieldError(r.Code, "product_not_found", "serial belum terikat produk")})
+					idx.fieldError(r.Code, "product_not_found", "serial belum terhubung ke produk")})
 			}
 			if units[r.ID] == 0 {
 				return serialErrWithFields(ErrSerialEmptyContainer, []apperror.FieldError{
@@ -271,7 +271,7 @@ func (s *SerialService) activeLocation(tx *gorm.DB, id uuid.UUID, field string) 
 	}
 	if loc.IsVirtual {
 		return loc, serialErrWithFields(ErrSerialLocationVirtual, []apperror.FieldError{
-			{Field: field, Code: "location_virtual", Message: "lokasi virtual"}})
+			{Field: field, Code: "location_virtual", Message: "lokasi virtual tidak bisa dipilih"}})
 	}
 	return loc, nil
 }

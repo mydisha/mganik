@@ -11,9 +11,9 @@ import (
 
 var (
 	ErrCSRFRejected = apperror.New(http.StatusForbidden, "csrf_rejected",
-		"Request ditolak", "Request dari situs lain ditolak. Muat ulang halaman lalu coba lagi.")
+		"Permintaan ditolak", "Permintaan dari situs lain ditolak. Muat ulang halaman, lalu coba lagi.")
 	ErrUnsupportedMediaType = apperror.New(http.StatusUnsupportedMediaType, "unsupported_media_type",
-		"Format tidak didukung", "Request wajib memakai Content-Type: application/json.")
+		"Format tidak didukung", "Permintaan wajib memakai Content-Type: application/json.")
 )
 
 // CSRFGuard memeriksa request bermetode tidak aman yang membawa cookie
