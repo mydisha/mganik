@@ -4,6 +4,48 @@ Prototype fondasi sistem dari lini produksi sampai konsumen: serialisasi hologra
 anti-counterfeit, stok dan order omnichannel dengan proteksi konkurensi, POS offline-first,
 dan Supply Chain Command Center.
 
+## Deliverable
+
+| Deliverable | Di mana | Bukti |
+|---|---|---|
+| 1a. Verifikasi serial hologram + logika anti-fraud | `POST /api/v1/public/verify`, `POST /api/v1/public/claims`; `service/verify_service.go`, `radar_service.go`, `loyalty_service.go` | `internal/serialtest/radar_test.go`, `loyalty_test.go`, `loyalty_review_test.go` |
+| 1b. Alokasi stok pesanan dengan proteksi konkurensi | `POST /api/v1/orders`; `service/inventory_service.go`, `order_service.go`, `repository/inventory_repository.go` (`ApplyBalanceEffect`) | `internal/inventorytest/` |
+| 1c. Endpoint rekonsiliasi transaksi POS offline | `POST /api/v1/pos/sync`; `service/pos_sync_service.go` | `internal/postest/` (termasuk `kasus4_test.go`) |
+| 2. Arsitektur: komponen, alur data, skema DB, pilihan teknologi, strategi konkurensi | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Skema di `apps/api/migrations/` |
+| 3. Solusi 4 kasus, trade-off, metrik bisnis | [`PRODUCT_DEFENSE.md`](PRODUCT_DEFENSE.md) | — |
+| 4a. Test race condition stok | `internal/inventorytest/engine_test.go` | `TestReserve_ConcurrentLastUnits`: stok 10, 100 goroutine → tepat 10 reservasi |
+| 4b. Test siklus status hologram | `internal/serialtest/lifecycle_test.go` | `TestSerialTransitions_Table` (setiap pasangan status), `TestSerial_ConcurrentSell` |
+| 4c. Test idempotensi sync offline | `internal/postest/sync_idempotency_test.go` | `TestPosSync_DuplicateBatch`, `TestPosSync_ConcurrentDuplicate`, `TestPosSync_SameIdDifferentPayload` |
+
+Path kode relatif terhadap `apps/api/internal/`. Frontend (`/pos`, `/console`, `/v/<kode>`)
+masih kerangka; ketiga alur dibuktikan lewat API dan test. Daftar lengkap yang belum dibangun
+ada di [ARCHITECTURE.md §9](ARCHITECTURE.md#9-batasan-prototype).
+
+### Menjalankan tiga test wajib
+
+Prasyarat: Go 1.27 dan Docker (test memakai PostgreSQL 17 lewat testcontainers), atau server
+Postgres 17 sendiri lewat `TEST_DATABASE_URL`. Jalankan dari `apps/api`.
+
+Race condition stok:
+
+```bash
+go test -race -count=1 -run 'TestReserve_ConcurrentLastUnits' -v ./internal/inventorytest/
+```
+
+Siklus status hologram:
+
+```bash
+go test -race -count=1 -run 'TestSerialTransitions_Table|TestSerial_ConcurrentSell' -v ./internal/serialtest/
+```
+
+Idempotensi sync POS offline:
+
+```bash
+go test -race -count=1 -run 'TestPosSync_DuplicateBatch|TestPosSync_ConcurrentDuplicate|TestPosSync_SameIdDifferentPayload' -v ./internal/postest/
+```
+
+Seluruh test (Go dan frontend): `make test`.
+
 ## Menjalankan
 
 Prasyarat: Docker dengan Compose v2.
@@ -21,7 +63,8 @@ Satu perintah itu menjalankan seluruh stack secara berurutan:
 | `api` | Backend Go (Gin) | http://localhost:8089 |
 | `web` | Build React disajikan nginx, mem-proxy `/api` ke `api` | http://localhost:8088 |
 
-Halaman: `/console` (Command Center), `/pos` (kasir), `/v/<kode>` (verifikasi konsumen).
+Halaman: `/console` (Command Center), `/pos` (kasir), `/v/<kode>` (verifikasi konsumen); saat
+ini masih kerangka.
 Port bisa diubah lewat `.env` (salin dari `.env.example`). `make up` menjalankan hal yang
 sama di background; `make down` mematikannya, `make clean` juga menghapus data database.
 
