@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -35,6 +36,18 @@ type Config struct {
 	// Serialization: verifikasi publik dan klaim loyalty (Fase 2). Nilai nol
 	// berarti default (lihat SerializationConfig.WithDefaults).
 	Serialization SerializationConfig
+	// AllowedOrigins (ALLOWED_ORIGINS, dipisah koma) adalah origin tambahan
+	// yang lolos cek CSRF untuk request ber-cookie. Kosong = hanya origin
+	// yang host-nya sama dengan host request.
+	AllowedOrigins []string
+	// PIIEncKey (PII_ENC_KEY) adalah kunci induk data pribadi konsumen. Subkey
+	// enkripsi AES-256-GCM nomor HP, blind index HMAC, dan hash IP diturunkan
+	// darinya lewat HKDF. Tidak pernah disimpan di DB.
+	PIIEncKey []byte
+	// OTPMockCode (OTP_MOCK_CODE) adalah kode OTP tetap untuk demo. Kosong =
+	// login konsumen dimatikan. Di production ditolak kecuali
+	// SEED_DEMO_ALLOW_PRODUCTION=true.
+	OTPMockCode string
 }
 
 // SerializationConfig mengatur endpoint publik verifikasi dan klaim poin.
@@ -107,6 +120,16 @@ const (
 	// DefaultDemoPassword dipakai kalau SEED_DEMO_PASSWORD kosong (dicatat di
 	// README). Aturan production sama dengan DemoClaimPepper.
 	DefaultDemoPassword = "mganik-demo-2026"
+
+	// MinPIIEncKeyBytes adalah panjang minimum PII_ENC_KEY di semua
+	// lingkungan (sama dengan pii.MinMasterKeyBytes; dijaga test).
+	MinPIIEncKeyBytes = 32
+	// DemoPIIEncKey adalah kunci PII publik untuk stack demo. Aturan satu
+	// sumber dan penolakan di production sama dengan DemoClaimPepper.
+	DemoPIIEncKey = "demo-pii-enc-key-ganti-sebelum-dipakai-sungguhan"
+	// DemoOTPCode adalah kode OTP mock untuk stack demo (6 digit). Aturan sama
+	// dengan DemoClaimPepper; di production tanpa izin demo OTP mock ditolak.
+	DemoOTPCode = "246810"
 )
 
 // DemoOverrideActive: production berjalan dengan izin data/kredensial demo.
@@ -172,8 +195,33 @@ func Load() (Config, error) {
 	case cfg.AppEnv != EnvProduction:
 		cfg.ClaimPepper = []byte(DemoClaimPepper)
 	}
+	// PII_ENC_KEY tidak di-trim, sama dengan CLAIM_PEPPER.
+	piiKey, hasPIIKey := os.LookupEnv("PII_ENC_KEY")
+	switch {
+	case hasPIIKey && piiKey != "":
+		cfg.PIIEncKey = []byte(piiKey)
+	case cfg.AppEnv != EnvProduction:
+		cfg.PIIEncKey = []byte(DemoPIIEncKey)
+	}
+	// OTP mock aktif secara default hanya di luar production.
+	otpDefault := DemoOTPCode
+	if cfg.AppEnv == EnvProduction {
+		otpDefault = ""
+	}
+	cfg.OTPMockCode = r.str("OTP_MOCK_CODE", otpDefault)
+	if cfg.OTPMockCode != "" && !isSixDigits(cfg.OTPMockCode) {
+		errs = append(errs, errors.New("OTP_MOCK_CODE harus 6 digit angka"))
+	}
+	cfg.AllowedOrigins = r.origins("ALLOWED_ORIGINS")
+
 	if len(cfg.Seed.DemoPassword) < MinDemoPasswordLen {
 		errs = append(errs, fmt.Errorf("SEED_DEMO_PASSWORD minimal %d karakter", MinDemoPasswordLen))
+	}
+	// Batas ini berlaku di semua lingkungan (sama dengan pii.MinMasterKeyBytes),
+	// supaya kunci pendek ditolak saat start, bukan saat router dibangun.
+	if len(cfg.PIIEncKey) < MinPIIEncKeyBytes {
+		errs = append(errs, fmt.Errorf("PII_ENC_KEY wajib diisi minimal %d byte (sekarang %d byte)",
+			MinPIIEncKeyBytes, len(cfg.PIIEncKey)))
 	}
 	if cfg.AppEnv == EnvProduction {
 		if len(cfg.ClaimPepper) < MinClaimPepperBytes {
@@ -186,6 +234,13 @@ func Load() (Config, error) {
 			const hint = "set SEED_DEMO_ALLOW_PRODUCTION=true hanya untuk stack demo lokal"
 			if string(cfg.ClaimPepper) == DemoClaimPepper {
 				errs = append(errs, fmt.Errorf("CLAIM_PEPPER memakai nilai demo publik di production (%s)", hint))
+			}
+			if string(cfg.PIIEncKey) == DemoPIIEncKey {
+				errs = append(errs, fmt.Errorf("PII_ENC_KEY memakai nilai demo publik di production (%s)", hint))
+			}
+			// Belum ada pengirim OTP sungguhan: kode tetap apa pun adalah mock.
+			if cfg.OTPMockCode != "" {
+				errs = append(errs, fmt.Errorf("OTP_MOCK_CODE (OTP mock) ditolak di production (%s)", hint))
 			}
 			if cfg.Seed.Demo {
 				errs = append(errs, fmt.Errorf("SEED_DEMO=true ditolak di production (%s)", hint))
@@ -245,6 +300,36 @@ func (r reader) list(key string) []string {
 		}
 	}
 	return out
+}
+
+// origins membaca daftar origin (scheme://host[:port]) dan menormalkannya ke
+// huruf kecil tanpa garis miring penutup. Origin dengan path, query, atau
+// scheme selain http/https ditolak.
+func (r reader) origins(key string) []string {
+	var out []string
+	for _, raw := range r.list(key) {
+		o := strings.ToLower(strings.TrimSuffix(raw, "/"))
+		u, err := url.Parse(o)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+			u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+			*r.errs = append(*r.errs, fmt.Errorf("%s berisi origin tidak valid %q (format: https://host[:port])", key, raw))
+			continue
+		}
+		out = append(out, o)
+	}
+	return out
+}
+
+func isSixDigits(s string) bool {
+	if len(s) != 6 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func (r reader) positiveInt(key string, def int) int {

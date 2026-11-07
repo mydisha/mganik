@@ -38,6 +38,143 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Login staff dengan email + password
+         * @description Sukses memasang cookie `__Host-session` (HttpOnly, Secure, SameSite=Lax, idle 8 jam, absolut 12 jam) dan mengembalikan profil seperti /auth/me. Gagal memakai pesan generik yang sama untuk email tidak dikenal maupun password salah. Percobaan dibatasi per email (5) dan per IP (20) dalam 15 menit; jatah dipesan sebelum password diverifikasi, jadi request paralel tidak bisa melewatinya. Login sukses tidak memakan jatah IP.
+         */
+        post: operations["login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mencabut sesi staff dan menghapus cookie
+         * @description Idempotent; selalu 204 walau sesi sudah kedaluwarsa atau tidak ada.
+         */
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Profil staff yang sedang login, role, permission, dan scope lokasi */
+        get: operations["getMe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/otp/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Minta kode OTP login konsumen (mock)
+         * @description Nomor dinormalkan ke E.164 Indonesia (+628...). Prototype memakai kode OTP tetap (OTP_MOCK_CODE) yang tidak pernah dikembalikan di respons; dimatikan (503 otp_unavailable) di production tanpa izin demo. Dibatasi 5 permintaan per nomor dan 20 per IP dalam 15 menit.
+         */
+        post: operations["requestConsumerOtp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/otp/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verifikasi OTP dan buat sesi konsumen
+         * @description Sukses memasang cookie `__Host-consumer` (idle 24 jam, absolut 7 hari). Maksimal 5 percobaan per kode; setelah itu minta kode baru. Cookie konsumen lama (bila ada) dicabut dan diganti.
+         */
+        post: operations["verifyConsumerOtp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/consumer/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Konsumen yang sedang login (nomor disamarkan)
+         * @description Butuh cookie `__Host-consumer` dari /public/otp/verify.
+         */
+        get: operations["getConsumerMe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/consumer/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mencabut sesi konsumen dan menghapus cookie
+         * @description Idempotent; memakai cookie `__Host-consumer` bila ada.
+         */
+        post: operations["logoutConsumer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/code-batches": {
         parameters: {
             query?: never;
@@ -281,6 +418,64 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        LoginRequest: {
+            email: string;
+            /** Format: password */
+            password: string;
+        };
+        LocationRef: {
+            /** Format: uuid */
+            id: string;
+            code: string;
+            name: string;
+        };
+        MeUser: {
+            /** Format: uuid */
+            id: string;
+            email: string;
+            name: string;
+        };
+        MeRole: {
+            /** @description Kode role, mis. ADMIN, CASHIER */
+            code: string;
+            name: string;
+            scope_mode: components["schemas"]["ScopeMode"];
+            /** @description Hanya terisi untuk scope SELECTED */
+            locations: components["schemas"]["LocationRef"][];
+        };
+        /** @enum {string} */
+        ScopeMode: "ALL" | "SELECTED";
+        /** @description Scope lokasi efektif. ALL = semua lokasi (locations kosong). SELECTED = hanya locations; daftar kosong berarti tidak ada akses lokasi. */
+        MeScope: {
+            mode: components["schemas"]["ScopeMode"];
+            locations: components["schemas"]["LocationRef"][];
+        };
+        MeResponse: {
+            user: components["schemas"]["MeUser"];
+            roles: components["schemas"]["MeRole"][];
+            /** @description Gabungan permission semua role, urut */
+            permissions: string[];
+            scope: components["schemas"]["MeScope"];
+        };
+        OtpRequest: {
+            /** @description Nomor seluler Indonesia, mis. 0812xxxxxxxx atau +62812xxxxxxxx */
+            phone: string;
+        };
+        OtpRequestResponse: {
+            /** Format: date-time */
+            expires_at: string;
+            expires_in_seconds: number;
+        };
+        OtpVerifyRequest: {
+            phone: string;
+            code: string;
+        };
+        ConsumerMeResponse: {
+            /** Format: uuid */
+            id: string;
+            /** @description Nomor E.164 yang disamarkan, mis. +62812*****890 */
+            phone_masked: string;
+        };
         /** @description Kode serial 16 karakter Crockford Base32; duplikat (setelah normalisasi) ditolak 422 */
         SerialCodeList: string[];
         MintCodesRequest: {
@@ -672,6 +867,391 @@ export interface operations {
             };
             /** @description Belum siap */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Login berhasil */
+            200: {
+                headers: {
+                    /** @description __Host-session=<token>; Path=/; Max-Age=43200; HttpOnly; Secure; SameSite=Lax */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description invalid_credentials (email atau password salah) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description account_disabled, atau csrf_rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description too_many_attempts; detail memuat menit tunggu */
+            429: {
+                headers: {
+                    /** @description Detik sampai boleh mencoba lagi */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description server_busy (verifikasi password bersamaan penuh); coba lagi */
+            503: {
+                headers: {
+                    /** @description Detik sampai boleh mencoba lagi */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sesi dicabut (kalau ada) dan cookie dihapus */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Lihat field code (problem+json) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Profil */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            /** @description unauthenticated atau session_expired */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Pemanggil bukan staff (mis. token device) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    requestConsumerOtp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OtpRequest"];
+            };
+        };
+        responses: {
+            /** @description Kode dikirim (respons sama untuk nomor baru maupun lama) */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OtpRequestResponse"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description too_many_attempts; detail memuat menit tunggu */
+            429: {
+                headers: {
+                    /** @description Detik sampai boleh mencoba lagi */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    verifyConsumerOtp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OtpVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Login konsumen berhasil */
+            200: {
+                headers: {
+                    /** @description __Host-consumer=<token>; Path=/; Max-Age=604800; HttpOnly; Secure; SameSite=Lax */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsumerMeResponse"];
+                };
+            };
+            /** @description otp_invalid (kode salah atau kedaluwarsa) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description consumer_blocked atau csrf_rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description too_many_attempts; detail memuat menit tunggu */
+            429: {
+                headers: {
+                    /** @description Detik sampai boleh mencoba lagi */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getConsumerMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Profil konsumen */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsumerMeResponse"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    logoutConsumer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sesi dicabut (kalau ada) dan cookie dihapus */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Lihat field code (problem+json) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Lihat field code (problem+json) */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };

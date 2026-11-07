@@ -47,10 +47,28 @@ harga POS dan D2C, satu akun per role, dan 1 device POS di toko Jakarta Selatan.
 Password semua akun: nilai `SEED_DEMO_PASSWORD`, default **`mganik-demo-2026`**. Ganti di
 `.env` sebelum seed pertama kalau stack dibuka ke jaringan lain.
 
+Login staff: `POST /api/v1/auth/login` memasang cookie `__Host-session` (idle 8 jam,
+absolut 12 jam); 5 kali gagal per email atau 20 per IP dalam 15 menit memblok sementara.
+Login konsumen (klaim poin) memakai OTP mock: minta kode lewat
+`POST /api/v1/public/otp/request` dengan nomor seluler Indonesia mana pun, lalu masukkan kode
+tetap `OTP_MOCK_CODE`, default **`246810`**. Belum ada pengirim SMS; OTP mock ditolak di
+production kecuali `SEED_DEMO_ALLOW_PRODUCTION=true`. Nomor HP disimpan terenkripsi
+(`PII_ENC_KEY`) dan tidak pernah ditulis ke log.
+
+Cookie sesi memakai prefix `__Host-` dan atribut `Secure`. Di `http://localhost` (tanpa
+TLS) cookie ini diterima Chrome dan Firefox karena localhost dianggap konteks aman, tetapi
+**tidak oleh Safari**: pakai Chrome/Firefox untuk demo lokal, atau pasang TLS.
+
+IP klien untuk rate limit dan audit diambil dari `X-Forwarded-For` hanya kalau request
+datang dari nginx (container `web`, IP statis `COMPOSE_WEB_IP`, default `172.31.250.10` di
+subnet `COMPOSE_SUBNET`); nginx menimpa header itu dengan IP peer. Request langsung ke port
+API memakai IP peer-nya sendiri. Kalau subnet bentrok di host, ubah `COMPOSE_SUBNET`,
+`COMPOSE_WEB_IP`, dan `COMPOSE_IP_RANGE` bersama di `.env` (lihat `.env.example`).
+
 Compose adalah stack demo lokal: walau `APP_ENV=production`, ia memakai pepper dan akun
 demo yang nilainya publik di repo, lewat izin `SEED_DEMO_ALLOW_PRODUCTION=true` (api dan
 migrate menulis WARN saat start). Untuk deployment sungguhan set izin itu `false`; config
-lalu menolak `SEED_DEMO=true`, `CLAIM_PEPPER` demo, dan password demo default. `make
+lalu menolak `SEED_DEMO=true`, `CLAIM_PEPPER`/`PII_ENC_KEY` demo, OTP mock, dan password demo default. `make
 migrate/seed/api` membaca `.env` yang sama dan memakai default `CLAIM_PEPPER` yang sama
 dengan compose, jadi PIN demo tetap terverifikasi di kedua cara menjalankan. Kalau pepper
 diganti, `api seed` berikutnya memperbarui hash PIN fixture demo.

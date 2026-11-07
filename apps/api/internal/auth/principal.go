@@ -38,6 +38,18 @@ type Principal struct {
 	// selalu eksplisit; daftar lokasi kosong TIDAK berarti semua lokasi.
 	ScopeAll    bool
 	LocationIDs []uuid.UUID
+	// PermissionScopes memetakan setiap permission ke lokasi tempat permission
+	// itu berlaku, dihitung per role (permission role A tidak ikut berlaku di
+	// lokasi role B). Dipakai CanAt. Principal tanpa map ini (dibuat manual)
+	// tidak lolos CanAt sama sekali: fail closed.
+	PermissionScopes map[string]PermScope
+}
+
+// PermScope: cakupan lokasi satu permission. All true = semua lokasi;
+// selain itu hanya LocationIDs (kosong = tidak ada lokasi).
+type PermScope struct {
+	All         bool
+	LocationIDs []uuid.UUID
 }
 
 // Can melaporkan apakah principal memiliki permission perm.
@@ -59,6 +71,29 @@ func (p *Principal) CanAccessLocation(id uuid.UUID) bool {
 	}
 	for _, loc := range p.LocationIDs {
 		if loc == id {
+			return true
+		}
+	}
+	return false
+}
+
+// CanAt melaporkan apakah principal memiliki permission perm DI lokasi loc.
+// Berbeda dengan Can + CanAccessLocation, cek ini memakai scope role yang
+// memberi permission itu, jadi role ALL tanpa perm tidak memperluas perm
+// dari role SELECTED.
+func (p *Principal) CanAt(perm string, loc uuid.UUID) bool {
+	if p == nil {
+		return false
+	}
+	s, ok := p.PermissionScopes[perm]
+	if !ok {
+		return false
+	}
+	if s.All {
+		return true
+	}
+	for _, id := range s.LocationIDs {
+		if id == loc {
 			return true
 		}
 	}
