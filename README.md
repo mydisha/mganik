@@ -75,7 +75,8 @@ The `migrate` service runs `api migrate --seed`: migrations, then demo data. The
 `.env` to migrate only). It contains: 2 SKUs, the Bekasi central warehouse (`GDP-BKS`), the
 Surabaya hub (`HUB-SBY`), the Jakarta Selatan (`TKO-JKS`) and Bandung (`TKO-BDG`) stores, the
 Distributor Jatim and Distributor Sulsel warehouses with their official territories, 1 batch with
-1 pallet → 4 cartons → 48 serialized units, stock balances + ledger, POS and D2C prices, one account
+1 pallet → 4 cartons → 48 serialized units at `GDP-BKS` plus one loose serialized unit (#49) already
+received by `TKO-JKS` (the store's last unit for Case 4, scannable at the POS), stock balances + ledger, POS and D2C prices, one account
 per role, and 1 POS device at the Jakarta Selatan store.
 
 | Account | Role | Location scope |
