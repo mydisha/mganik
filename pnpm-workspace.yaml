@@ -1,2 +1,6 @@
 packages:
   - apps/web
+# swagger-ui-dist (aset Swagger UI di image web) membawa @scarf/scarf, yang
+# menjalankan skrip telemetri saat install. Skrip itu tidak dijalankan.
+allowBuilds:
+  '@scarf/scarf': false

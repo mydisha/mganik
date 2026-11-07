@@ -565,7 +565,7 @@ export interface paths {
         put?: never;
         /**
          * Mock payment webhook (HMAC signature, idempotent per provider_ref)
-         * @description Amount and currency must equal the order total. PENDING_PAYMENT → PAID. Late payment (EXPIRED): stock is reserved again → PAID, or NEEDS_ACTION plus refund when stock is gone. A resend returns 200 ALREADY_PROCESSED.
+         * @description Amount and currency must equal the order total. PENDING_PAYMENT → PAID. Late payment (EXPIRED): stock is reserved again → PAID, or NEEDS_ACTION plus refund when stock is gone. A resend returns 200 ALREADY_PROCESSED. See "Signed endpoints" in the API description for a shell command that signs the request.
          */
         post: operations["paymentWebhookMock"];
         delete?: never;
@@ -585,7 +585,7 @@ export interface paths {
         put?: never;
         /**
          * Import a paid marketplace order (HMAC signature)
-         * @description Deduplicated per (channel_code, external_ref): re-importing the same body = 200 duplicate with the same order; a different body = 409 external_ref_conflict. The order starts as PAID; with insufficient stock the order is still created and moves to NEEDS_ACTION (not rejected).
+         * @description Deduplicated per (channel_code, external_ref): re-importing the same body = 200 duplicate with the same order; a different body = 409 external_ref_conflict. The order starts as PAID; with insufficient stock the order is still created and moves to NEEDS_ACTION (not rejected). See "Signed endpoints" in the API description for a shell command that signs the request.
          */
         post: operations["importMarketplaceOrder"];
         delete?: never;
@@ -706,7 +706,10 @@ export interface paths {
         put?: never;
         /**
          * Reconcile offline POS transactions (idempotent per transaction)
-         * @description At most sync_max_batch (500) transactions per batch and
+         * @description Try this flow through the cashier app at `/pos`, which signs every transaction,
+         *     stores it offline, and syncs it (see "Signed endpoints" in the API description).
+         *
+         *     At most sync_max_batch (500) transactions per batch and
          *     sync_max_body_bytes (5 MiB) per body. Transactions are processed in
          *     device_seq order, each in its own database transaction; one failure does
          *     not stop the others. A sale is a fact: it is NEVER rejected because of
@@ -2503,6 +2506,11 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "phone": 81234567890
+                 *     }
+                 */
                 "application/json": components["schemas"]["OtpRequest"];
             };
         };
@@ -2574,6 +2582,12 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "phone": 81234567890,
+                 *       "code": "246810"
+                 *     }
+                 */
                 "application/json": components["schemas"]["OtpVerifyRequest"];
             };
         };
@@ -2984,7 +2998,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description 16-character Crockford Base32 serial code (lowercase and hyphens are normalized) */
+                /**
+                 * @description 16-character Crockford Base32 serial code (lowercase and hyphens are normalized)
+                 * @example 4WXENVZYGZVNBATA
+                 */
                 code: string;
             };
             cookie?: never;
@@ -3043,7 +3060,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description 16-character Crockford Base32 serial code (lowercase and hyphens are normalized) */
+                /**
+                 * @description 16-character Crockford Base32 serial code (lowercase and hyphens are normalized)
+                 * @example 4WXENVZYGZVNBATA
+                 */
                 code: string;
             };
             cookie?: never;
@@ -3099,6 +3119,11 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "reason": "Uji lab menemukan kontaminasi pada lot L2610A"
+                 *     }
+                 */
                 "application/json": components["schemas"]["RecallRequest"];
             };
         };
@@ -3580,7 +3605,10 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Client idempotency key (1-255 visible ASCII characters) */
+                /**
+                 * @description Client idempotency key (1-255 visible ASCII characters). Reuse a key to see the stored response replayed; use a new key for a new request.
+                 * @example demo-key-001
+                 */
                 "Idempotency-Key": string;
             };
             path?: never;
@@ -3588,6 +3616,14 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "location_id": "1666259e-6aa4-5d50-b297-5fd2887e7719",
+                 *       "product_id": "37a8fc14-037a-5a0b-a220-3c212c909693",
+                 *       "qty_delta": -1,
+                 *       "reason": "Kemasan rusak saat stock opname"
+                 *     }
+                 */
                 "application/json": components["schemas"]["InventoryAdjustmentRequest"];
             };
         };
@@ -3661,7 +3697,10 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Client idempotency key (1-255 visible ASCII characters) */
+                /**
+                 * @description Client idempotency key (1-255 visible ASCII characters). Reuse a key to see the stored response replayed; use a new key for a new request.
+                 * @example demo-key-001
+                 */
                 "Idempotency-Key": string;
             };
             path?: never;
@@ -3669,6 +3708,15 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "location_id": "13792935-de43-5ce7-b15b-82c7a923b1fc",
+                 *       "product_id": "37a8fc14-037a-5a0b-a220-3c212c909693",
+                 *       "qty": 5,
+                 *       "direction": "IN",
+                 *       "reason": "Segel rusak, menunggu QC"
+                 *     }
+                 */
                 "application/json": components["schemas"]["InventoryQuarantineRequest"];
             };
         };
@@ -3742,7 +3790,10 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description Client idempotency key (1-255 visible ASCII characters) */
+                /**
+                 * @description Client idempotency key (1-255 visible ASCII characters). Reuse a key to see the stored response replayed; use a new key for a new request.
+                 * @example demo-key-001
+                 */
                 "Idempotency-Key": string;
             };
             path?: never;
@@ -3872,6 +3923,11 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "reason": "Pelanggan membatalkan pesanan"
+                 *     }
+                 */
                 "application/json": components["schemas"]["OrderCancelRequest"];
             };
         };
@@ -3943,6 +3999,7 @@ export interface operations {
         };
         requestBody?: {
             content: {
+                /** @example {} */
                 "application/json": components["schemas"]["OrderFulfillRequest"];
             };
         };
@@ -4017,6 +4074,16 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "provider_ref": "PAY-DEMO-0001",
+                 *       "order_id": "00000000-0000-0000-0000-000000000000",
+                 *       "amount": 66000,
+                 *       "currency": "IDR",
+                 *       "status": "SUCCEEDED",
+                 *       "method": "QRIS"
+                 *     }
+                 */
                 "application/json": components["schemas"]["PaymentWebhookRequest"];
             };
         };
@@ -4091,6 +4158,21 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "channel_code": "SHOPEE",
+                 *       "external_ref": "SHP-DEMO-0001",
+                 *       "currency": "IDR",
+                 *       "lines": [
+                 *         {
+                 *           "sku": "DEMO-TEH-BAG20",
+                 *           "qty": 1,
+                 *           "unit_price": 33000,
+                 *           "discount": 0
+                 *         }
+                 *       ]
+                 *     }
+                 */
                 "application/json": components["schemas"]["MarketplaceOrderRequest"];
             };
         };
@@ -4211,6 +4293,12 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "location_id": "05dc2ae7-585d-5895-9dbf-2d8db39d6b97",
+                 *       "name": "Kasir 1 Toko Bandung"
+                 *     }
+                 */
                 "application/json": components["schemas"]["PosDeviceCreateRequest"];
             };
         };
@@ -4275,6 +4363,11 @@ export interface operations {
         };
         requestBody?: {
             content: {
+                /**
+                 * @example {
+                 *       "reason": "Tablet kasir hilang"
+                 *     }
+                 */
                 "application/json": components["schemas"]["PosDeviceRevokeRequest"];
             };
         };
@@ -4422,6 +4515,11 @@ export interface operations {
         };
         requestBody?: {
             content: {
+                /**
+                 * @example {
+                 *       "pending_count": 0
+                 *     }
+                 */
                 "application/json": components["schemas"]["PosHeartbeatRequest"];
             };
         };
@@ -4571,6 +4669,12 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "resolution": "CUSTOMER_COMPENSATED",
+                 *       "note": "Pelanggan online diberi voucher, pesanan dikirim dari gudang pusat"
+                 *     }
+                 */
                 "application/json": components["schemas"]["ConflictResolveRequest"];
             };
         };

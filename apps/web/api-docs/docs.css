@@ -1,0 +1,13 @@
+/* Swagger UI hanya punya tema terang yang lengkap; mode gelapnya (html.dark-mode)
+   tetap menulis deskripsi abu tua di atas latar gelap. Halaman ini dipaksa terang
+   dengan latar putih eksplisit supaya teks tetap kontras di browser/OS bertema gelap. */
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  margin: 0;
+  background: #fff;
+  color: #3b4151;
+}
