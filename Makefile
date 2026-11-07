@@ -7,6 +7,7 @@
 COMPOSE ?= docker compose
 DB_PORT ?= 55432
 API_PORT ?= 8089
+WEB_PORT ?= 8088
 POSTGRES_PASSWORD ?= mganik
 DEV_DATABASE_URL ?= postgres://mganik:$(POSTGRES_PASSWORD)@localhost:$(DB_PORT)/mganik?sslmode=disable
 
@@ -22,8 +23,10 @@ RUN_WORKER ?= true
 PII_ENC_KEY ?= demo-pii-enc-key-ganti-sebelum-dipakai-sungguhan
 OTP_MOCK_CODE ?= 246810
 # Vite dev server (port 5173) mem-proxy /api dengan changeOrigin, jadi
-# origin-nya didaftarkan untuk cek CSRF `make api`.
-ALLOWED_ORIGINS ?= http://localhost:5173,http://127.0.0.1:5173
+# origin-nya didaftarkan untuk cek CSRF `make api`. Nilai ini juga di-export
+# ke `make up`, sehingga origin web compose (WEB_PORT) WAJIB ikut tercantum:
+# tanpa itu login di http://localhost:8088 ditolak sebagai lintas situs.
+ALLOWED_ORIGINS ?= http://localhost:5173,http://127.0.0.1:5173,http://localhost:$(WEB_PORT),http://127.0.0.1:$(WEB_PORT)
 export CLAIM_PEPPER SEED_DEMO_PASSWORD WEBHOOK_SECRET RUN_WORKER PII_ENC_KEY OTP_MOCK_CODE ALLOWED_ORIGINS
 
 .DEFAULT_GOAL := help
