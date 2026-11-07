@@ -80,14 +80,15 @@ export const consoleStrings = {
     summaryFailed: "Ringkasan tidak bisa dimuat",
     allClear: "Belum ada yang perlu ditindaklanjuti: stok di lokasi sendiri aman, tidak ada anomali terbuka, dan tidak ada konflik alokasi.",
     runoutCritical: (items: number, locations: number) =>
-      `Stok ${n(items)} SKU di ${n(locations)} lokasi kritis: sudah atau akan habis sebelum kiriman ulang tiba`,
+      `${n(items)} item stok (SKU per lokasi) di ${n(locations)} lokasi kritis: sudah atau akan habis sebelum kiriman ulang tiba`,
     runoutWarningAfterCritical: (items: number, locations: number) =>
-      `${n(items)} SKU lain di ${n(locations)} lokasi mulai menipis.`,
-    runoutWarningOnly: (items: number, locations: number) => `Stok ${n(items)} SKU di ${n(locations)} lokasi mulai menipis`,
+      `${n(items)} item stok lain di ${n(locations)} lokasi mulai menipis.`,
+    runoutWarningOnly: (items: number, locations: number) =>
+      `${n(items)} item stok (SKU per lokasi) di ${n(locations)} lokasi mulai menipis`,
     runoutEarliest: (when: string) => `, paling cepat habis ${when}.`,
     runoutNone: (days: number) => `Tidak ada stok di lokasi sendiri yang menipis menurut penjualan ${n(days)} hari terakhir.`,
-    outOfStock: (items: number, locations: number) => `${n(items)} SKU sudah habis di ${n(locations)} lokasi.`,
-    insufficient: (items: number) => `${n(items)} SKU belum punya riwayat penjualan, jadi perkiraannya belum dihitung.`,
+    outOfStock: (items: number, locations: number) => `${n(items)} item stok sudah habis di ${n(locations)} lokasi.`,
+    insufficient: (items: number) => `${n(items)} item stok belum punya riwayat penjualan, jadi perkiraannya belum dihitung.`,
     anomaliesLink: (total: number) => `${n(total)} anomali`,
     anomaliesOpen: " masih terbuka",
     anomaliesSevere: (count: number) => `, ${n(count)} di antaranya berprioritas tinggi atau kritis`,

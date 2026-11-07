@@ -38,14 +38,22 @@ export function requestLocation(): Promise<GeoPoint | null> {
       resolve(null);
       return;
     }
+    // Opsi `timeout` tidak menghitung waktu menunggu jawaban izin, dan
+    // sebagian browser tidak memanggil callback apa pun saat prompt ditutup.
+    // Timer sendiri menjamin halaman tidak macet.
+    const guard = setTimeout(() => resolve(null), GEO_TIMEOUT_MS + 2_000);
+    const done = (point: GeoPoint | null) => {
+      clearTimeout(guard);
+      resolve(point);
+    };
     navigator.geolocation.getCurrentPosition(
       (pos) =>
-        resolve({
+        done({
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
           accuracy_m: Math.min(100_000, Math.max(0, Math.round(pos.coords.accuracy))),
         }),
-      () => resolve(null),
+      () => done(null),
       { enableHighAccuracy: false, timeout: GEO_TIMEOUT_MS, maximumAge: 60_000 },
     );
   });

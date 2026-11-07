@@ -20,7 +20,7 @@ describe("Beranda", () => {
     });
     renderApp("/console");
 
-    expect(await screen.findByText(/Stok 1 SKU di 1 lokasi kritis/)).toBeInTheDocument();
+    expect(await screen.findByText(/1 item stok \(SKU per lokasi\) di 1 lokasi kritis/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "1 anomali" })).toHaveAttribute("href", "/console/anomali");
 
     const runout = await screen.findByRole("table", { name: "Akan habis paling cepat" });

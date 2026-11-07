@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { useParams } from "react-router";
 import { errorMessage } from "@/shared/lib/api";
 import { formatDate } from "@/shared/lib/format";
@@ -132,13 +132,20 @@ export function VerifyPage() {
   useDocumentTitle(t.title);
 
   // Izin lokasi diminta setelah pengguna menekan tombol, bukan saat halaman dibuka.
+  // "Cek tanpa lokasi" tetap bisa ditekan saat menunggu izin; percobaan yang
+  // lebih baru membatalkan hasil permintaan lokasi yang lama.
+  const attempt = useRef(0);
   async function start(withLocation: boolean) {
+    const id = ++attempt.current;
     let point: GeoPoint | null = null;
     if (withLocation) {
       setLocating(true);
       point = await requestLocation();
+      if (id !== attempt.current) return;
       setLocating(false);
       setLocationDenied(point === null);
+    } else {
+      setLocating(false);
     }
     setGeo(point);
     verify.mutate(point);
@@ -178,7 +185,7 @@ export function VerifyPage() {
               {busy && <Spinner />}
               {locating ? t.locating : verify.isPending ? t.checking : t.checkWithLocation}
             </Button>
-            <Button size="lg" variant="outline" onClick={() => void start(false)} disabled={busy}>
+            <Button size="lg" variant="outline" onClick={() => void start(false)} disabled={verify.isPending}>
               {t.checkWithoutLocation}
             </Button>
           </div>

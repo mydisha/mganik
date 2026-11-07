@@ -86,10 +86,14 @@ function RegisterDialog({ open, onOpenChange, onProvisioned }: {
   const form = useForm<RegisterValues>({ resolver: zodResolver(registerSchema), defaultValues: { location_id: "", name: "" } });
   const save = useMutation({
     mutationFn: provisionDevice,
+    // Token dan signing key hanya boleh hidup di dialog reveal: jangan
+    // disimpan di MutationCache setelah diserahkan.
+    gcTime: 0,
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ccKeys.devices() });
       form.reset();
       onProvisioned(result);
+      queueMicrotask(() => save.reset());
     },
     onError: (error) => {
       const fields = fieldErrors(error);

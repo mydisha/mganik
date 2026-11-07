@@ -39,7 +39,7 @@ describe("summarySentences", () => {
     const paragraphs = summarySentences(summary, now);
 
     expect(text(paragraphs)).toEqual([
-      "Stok 1 SKU di 1 lokasi kritis: sudah atau akan habis sebelum kiriman ulang tiba, paling cepat habis besok. 1.234 SKU lain di 3 lokasi mulai menipis. 2 SKU sudah habis di 1 lokasi. 2 SKU belum punya riwayat penjualan, jadi perkiraannya belum dihitung.",
+      "1 item stok (SKU per lokasi) di 1 lokasi kritis: sudah atau akan habis sebelum kiriman ulang tiba, paling cepat habis besok. 1.234 item stok lain di 3 lokasi mulai menipis. 2 item stok sudah habis di 1 lokasi. 2 item stok belum punya riwayat penjualan, jadi perkiraannya belum dihitung.",
       "5 anomali masih terbuka, 3 di antaranya berprioritas tinggi atau kritis; terbanyak dari Distributor Sulsel (3). 2 konflik alokasi menunggu keputusan. 1 dari 4 toko sedang offline, jadi stok toko itu tidak dijual online.",
     ]);
     expect(paragraphs[1]?.[0]?.[0]).toEqual({ text: "5 anomali", to: "/console/anomali" });
@@ -51,7 +51,7 @@ describe("summarySentences", () => {
       runout: { ...summaryFixture().runout, warning_items: 3, warning_locations: 2, earliest_runout_date: "2026-11-12" },
     });
     expect(text(summarySentences(summary, now))).toEqual([
-      "Stok 3 SKU di 2 lokasi mulai menipis, paling cepat habis dalam 5 hari (12 Nov 2026).",
+      "3 item stok (SKU per lokasi) di 2 lokasi mulai menipis, paling cepat habis dalam 5 hari (12 Nov 2026).",
       "Tidak ada anomali terbuka.",
     ]);
   });
