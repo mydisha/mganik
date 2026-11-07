@@ -1,0 +1,157 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Dark mode berbasis class: `.dark` di <html> dipasang saat boot (lihat main.tsx). */
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Token desain (arah KeiPay). DESIGN.md menjelaskan pemakaian tiap token;
+ * komponen memakai utilitas Tailwind dari @theme di bawah, tidak pernah warna mentah.
+ */
+:root {
+  --radius: 0.5rem;
+
+  --background: oklch(0.985 0.002 247);
+  --foreground: oklch(0.21 0.02 265);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.02 265);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.02 265);
+  --primary: oklch(0.27 0.03 265);
+  --primary-foreground: oklch(0.985 0.002 247);
+  --secondary: oklch(0.96 0.004 265);
+  --secondary-foreground: oklch(0.27 0.03 265);
+  --muted: oklch(0.96 0.004 265);
+  --muted-foreground: oklch(0.47 0.02 265);
+  --accent: oklch(0.95 0.006 265);
+  --accent-foreground: oklch(0.27 0.03 265);
+  --destructive: oklch(0.52 0.2 27);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.91 0.006 265);
+  --input: oklch(0.66 0.012 265);
+  --ring: oklch(0.55 0.16 262);
+  --link: oklch(0.5 0.17 262);
+  --overlay: oklch(0.15 0.01 265 / 0.5);
+
+  /* Nada status: teks dan border di atas latar tipis, kontras AA. */
+  --success: oklch(0.96 0.04 155);
+  --success-foreground: oklch(0.42 0.11 155);
+  --success-border: oklch(0.86 0.08 155);
+  --warning: oklch(0.97 0.05 85);
+  --warning-foreground: oklch(0.46 0.11 60);
+  --warning-border: oklch(0.86 0.1 80);
+  --danger: oklch(0.96 0.025 25);
+  --danger-foreground: oklch(0.48 0.19 27);
+  --danger-border: oklch(0.86 0.07 25);
+  --info: oklch(0.96 0.025 255);
+  --info-foreground: oklch(0.45 0.16 262);
+  --info-border: oklch(0.86 0.06 255);
+  --neutral: oklch(0.955 0.004 265);
+  --neutral-foreground: oklch(0.4 0.02 265);
+  --neutral-border: oklch(0.88 0.008 265);
+}
+
+.dark {
+  --background: oklch(0.17 0.012 265);
+  --foreground: oklch(0.95 0.004 265);
+  --card: oklch(0.21 0.014 265);
+  --card-foreground: oklch(0.95 0.004 265);
+  --popover: oklch(0.21 0.014 265);
+  --popover-foreground: oklch(0.95 0.004 265);
+  --primary: oklch(0.93 0.006 265);
+  --primary-foreground: oklch(0.21 0.02 265);
+  --secondary: oklch(0.27 0.014 265);
+  --secondary-foreground: oklch(0.95 0.004 265);
+  --muted: oklch(0.26 0.014 265);
+  --muted-foreground: oklch(0.72 0.014 265);
+  --accent: oklch(0.28 0.016 265);
+  --accent-foreground: oklch(0.95 0.004 265);
+  --destructive: oklch(0.52 0.19 25);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.3 0.014 265);
+  --input: oklch(0.52 0.016 265);
+  --ring: oklch(0.68 0.14 262);
+  --link: oklch(0.76 0.12 262);
+  --overlay: oklch(0 0 0 / 0.6);
+
+  --success: oklch(0.27 0.05 155);
+  --success-foreground: oklch(0.86 0.12 155);
+  --success-border: oklch(0.4 0.08 155);
+  --warning: oklch(0.29 0.05 70);
+  --warning-foreground: oklch(0.88 0.12 85);
+  --warning-border: oklch(0.45 0.09 75);
+  --danger: oklch(0.28 0.06 25);
+  --danger-foreground: oklch(0.84 0.09 25);
+  --danger-border: oklch(0.42 0.11 25);
+  --info: oklch(0.28 0.05 260);
+  --info-foreground: oklch(0.84 0.08 255);
+  --info-border: oklch(0.42 0.1 260);
+  --neutral: oklch(0.27 0.012 265);
+  --neutral-foreground: oklch(0.82 0.01 265);
+  --neutral-border: oklch(0.38 0.014 265);
+}
+
+@theme inline {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-link: var(--link);
+  --color-overlay: var(--overlay);
+
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-border: var(--success-border);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-border: var(--warning-border);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-border: var(--danger-border);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-border: var(--info-border);
+  --color-neutral: var(--neutral);
+  --color-neutral-foreground: var(--neutral-foreground);
+  --color-neutral-border: var(--neutral-border);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
+}

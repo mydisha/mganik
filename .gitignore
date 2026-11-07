@@ -1,0 +1,47 @@
+# Knowledge lokal: planning dan bahan belajar, tidak ikut commit
+/knowledge/
+
+# Env & rahasia
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Go
+/apps/api/bin/
+/apps/api/tmp/
+*.test
+*.out
+coverage.*
+go.work
+go.work.sum
+
+# Node / frontend
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+/apps/web/playwright-report/
+/apps/web/test-results/
+/apps/web/dev-dist/
+
+# Seed lokal yang memuat PIN demo
+/apps/api/seed-output/
+
+# Log & editor
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# Konfigurasi lokal tool editor/agent
+.claude/settings.local.json
+.claude/worktrees/
+CLAUDE.local.md

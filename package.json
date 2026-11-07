@@ -1,0 +1,15 @@
+{
+  "name": "mganik-omnichannel",
+  "private": true,
+  "packageManager": "pnpm@12.4.1",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "build:web": "pnpm --filter web build",
+    "test:web": "pnpm --filter web test",
+    "typecheck:web": "pnpm --filter web typecheck",
+    "gen:api": "pnpm --filter web gen:api"
+  }
+}

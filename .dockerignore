@@ -1,0 +1,9 @@
+# Dipakai build image web (context = root repo). Hanya yang dibutuhkan yang dikirim.
+*
+!package.json
+!pnpm-workspace.yaml
+!pnpm-lock.yaml
+!apps/web/
+apps/web/node_modules
+apps/web/dist
+apps/web/Dockerfile

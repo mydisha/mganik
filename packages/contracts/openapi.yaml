@@ -1,0 +1,75 @@
+openapi: 3.1.0
+info:
+  title: mGanik API
+  version: 0.1.0
+  description: >
+    Kontrak API backend mGanik. Sumber tunggal untuk tipe frontend
+    (openapi-typescript). Error memakai application/problem+json (RFC 9457).
+paths:
+  /healthz:
+    get:
+      operationId: getLive
+      summary: Liveness, menjawab selama proses hidup
+      responses:
+        "200":
+          description: Proses hidup
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveResponse"
+  /readyz:
+    get:
+      operationId: getReady
+      summary: Readiness, database terhubung dan migrasi sudah diterapkan
+      responses:
+        "200":
+          description: Siap menerima request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyResponse"
+        "503":
+          description: Belum siap
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+components:
+  schemas:
+    LiveResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+    ReadyResponse:
+      type: object
+      required: [status, schema_version, checked_at]
+      properties:
+        status:
+          type: string
+          const: ready
+        schema_version:
+          type: integer
+          format: int64
+        checked_at:
+          type: string
+          format: date-time
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        code:
+          type: string
+          description: Kode stabil untuk dipetakan ke pesan di frontend
+        detail:
+          type: string
+        request_id:
+          type: string

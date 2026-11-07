@@ -1,0 +1,7 @@
+#!/bin/sh
+# Tolak pesan commit yang memuat atribusi AI.
+# Aktifkan sekali per clone: git config core.hooksPath .githooks (make hooks)
+if grep -qiE 'claude|opus|sonnet|haiku|fable|co-authored|generated with' "$1"; then
+  echo "commit-msg: hapus baris atribusi AI dari pesan commit" >&2
+  exit 1
+fi
