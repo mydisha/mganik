@@ -88,8 +88,11 @@ type LoyaltyClaim struct {
 	ScanEventID  *uuid.UUID `gorm:"type:uuid"`
 	DecidedBy    *uuid.UUID `gorm:"type:uuid"`
 	DecidedAt    *time.Time
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// ReviewRequired: PENDING karena skor risiko (menunggu review manusia),
+	// bukan sekadar masa tunggu. Migrasi 00012.
+	ReviewRequired bool `gorm:"not null;default:false"`
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 func (LoyaltyClaim) TableName() string { return "loyalty_claims" }

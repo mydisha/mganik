@@ -32,6 +32,52 @@ type Config struct {
 	// tidak pernah di DB.
 	ClaimPepper []byte
 	Seed        SeedConfig
+	// Serialization: verifikasi publik dan klaim loyalty (Fase 2). Nilai nol
+	// berarti default (lihat SerializationConfig.WithDefaults).
+	Serialization SerializationConfig
+}
+
+// SerializationConfig mengatur endpoint publik verifikasi dan klaim poin.
+type SerializationConfig struct {
+	// LoyaltyPendingPeriod: masa tunggu poin untuk unit yang diklaim saat
+	// masih tercatat di mitra (AT_PARTNER). LOYALTY_PENDING_PERIOD, default 168h.
+	LoyaltyPendingPeriod time.Duration
+	// ClaimReviewThreshold: skor risiko (0-100) yang membuat klaim menunggu
+	// review manusia. CLAIM_REVIEW_THRESHOLD, default 50.
+	ClaimReviewThreshold int
+	// LoyaltyPointsPerUnit: poin per unit kalau produk tidak punya atribut
+	// loyalty_points. LOYALTY_POINTS_PER_UNIT, default 10.
+	LoyaltyPointsPerUnit int
+	// VerifyRatePerMinute dan ClaimRatePerMinute: rate limit per IP untuk
+	// endpoint publik. PUBLIC_VERIFY_RATE_PER_MIN (60), PUBLIC_CLAIM_RATE_PER_MIN (20).
+	VerifyRatePerMinute int
+	ClaimRatePerMinute  int
+	// ClaimRatePerConsumerPerHour: batas klaim per akun konsumen di samping
+	// batas per IP. PUBLIC_CLAIM_RATE_PER_CONSUMER_HOUR, default 10.
+	ClaimRatePerConsumerPerHour int
+}
+
+// WithDefaults mengisi nilai nol dengan default.
+func (c SerializationConfig) WithDefaults() SerializationConfig {
+	if c.LoyaltyPendingPeriod <= 0 {
+		c.LoyaltyPendingPeriod = 7 * 24 * time.Hour
+	}
+	if c.ClaimReviewThreshold <= 0 {
+		c.ClaimReviewThreshold = 50
+	}
+	if c.LoyaltyPointsPerUnit <= 0 {
+		c.LoyaltyPointsPerUnit = 10
+	}
+	if c.VerifyRatePerMinute <= 0 {
+		c.VerifyRatePerMinute = 60
+	}
+	if c.ClaimRatePerMinute <= 0 {
+		c.ClaimRatePerMinute = 20
+	}
+	if c.ClaimRatePerConsumerPerHour <= 0 {
+		c.ClaimRatePerConsumerPerHour = 10
+	}
+	return c
 }
 
 // SeedConfig mengatur data demo (`api seed`, `api migrate --seed`).
@@ -104,6 +150,18 @@ func Load() (Config, error) {
 			DemoPassword:    r.str("SEED_DEMO_PASSWORD", DefaultDemoPassword),
 			AllowProduction: r.boolean("SEED_DEMO_ALLOW_PRODUCTION", false),
 		},
+		Serialization: SerializationConfig{
+			LoyaltyPendingPeriod: r.duration("LOYALTY_PENDING_PERIOD", 7*24*time.Hour),
+			ClaimReviewThreshold: r.positiveInt("CLAIM_REVIEW_THRESHOLD", 50),
+			LoyaltyPointsPerUnit: r.positiveInt("LOYALTY_POINTS_PER_UNIT", 10),
+			VerifyRatePerMinute:  r.positiveInt("PUBLIC_VERIFY_RATE_PER_MIN", 60),
+			ClaimRatePerMinute:   r.positiveInt("PUBLIC_CLAIM_RATE_PER_MIN", 20),
+
+			ClaimRatePerConsumerPerHour: r.positiveInt("PUBLIC_CLAIM_RATE_PER_CONSUMER_HOUR", 10),
+		},
+	}
+	if cfg.Serialization.ClaimReviewThreshold > 100 {
+		errs = append(errs, fmt.Errorf("CLAIM_REVIEW_THRESHOLD harus 1-100 (sekarang %d)", cfg.Serialization.ClaimReviewThreshold))
 	}
 
 	// CLAIM_PEPPER tidak di-trim: spasi di dalam secret tetap bagian dari kunci.
