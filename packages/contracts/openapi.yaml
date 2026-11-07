@@ -48,6 +48,264 @@ paths:
   # ==== [/pos] ====
 
   # ==== [commandcenter] ====
+  # Read model Supply Chain Command Center (Pilar D). Semua endpoint butuh
+  # permission cc.read (PATCH anomali: anomaly.resolve) dan data difilter ke
+  # lokasi dalam scope pemanggil. List memakai pagination keyset: kirim
+  # next_cursor dari respons sebelumnya sebagai `cursor`. Semua timestamp
+  # dikirim dalam UTC (akhiran Z).
+  /api/v1/cc/summary:
+    get:
+      operationId: getCommandCenterSummary
+      summary: Fakta ringkas untuk kalimat ringkasan Command Center
+      description: >
+        Hitungan runout dan stok habis hanya untuk lokasi milik sendiri; stok di lokasi
+        mitra hanya estimasi dan tidak masuk ringkasan (tetap tampil di /cc/runout).
+      tags: [commandcenter]
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: Angka terstruktur; UI yang menyusun kalimat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CCSummaryResponse"
+        "401": &ccUnauthorized
+          description: Belum masuk
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403": &ccForbidden
+          description: Tanpa permission, atau filter lokasi di luar scope
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/cc/stock:
+    get:
+      operationId: listCommandCenterStock
+      summary: Saldo stok per lokasi dan produk (physical, reserved, quarantine, available)
+      description: Stok di lokasi bukan milik sendiri (gudang mitra, marketplace) ditandai is_estimate.
+      tags: [commandcenter]
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - &ccLimit
+          name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - &ccCursor
+          name: cursor
+          in: query
+          description: next_cursor dari halaman sebelumnya (opaque)
+          schema: { type: string, maxLength: 1024 }
+        - &ccLocationType
+          name: location_type
+          in: query
+          description: Kode location_types, mis. CENTRAL_WH, HUB, OWN_STORE, PARTNER_WH
+          schema: { type: string, pattern: "^[A-Z][A-Z0-9_]{0,63}$" }
+        - &ccLocationId
+          name: location_id
+          in: query
+          schema: { type: string, format: uuid }
+        - &ccProductId
+          name: product_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Satu halaman saldo, urut kode lokasi lalu SKU
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CCStockPage"
+        "401": *ccUnauthorized
+        "403": *ccForbidden
+        "422": &ccInvalid
+          description: Query param tidak valid (limit, cursor, filter)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/cc/runout:
+    get:
+      operationId: listCommandCenterRunout
+      summary: Days of inventory dan perkiraan tanggal habis per lokasi dan produk
+      description: >
+        DOI = available ÷ rata-rata penjualan harian (DIRECT_SALE + COMMIT_SALE dalam 28 hari
+        terakhir ÷ history_days). history_days = hari sejak mutasi pertama (lokasi, produk),
+        1..28, sehingga SKU baru tidak dibagi 28 hari; riwayat < 7 hari diberi reason
+        SHORT_HISTORY. DOI dibulatkan 2 desimal sekali dan nilai itu yang dipakai untuk level.
+        CRITICAL bila DOI < lead_time_days atau stok habis padahal masih laku; WARNING bila
+        DOI < lead_time_days + safety_days atau available < min_qty; INSUFFICIENT_DATA bila
+        tanpa riwayat penjualan (DOI null, tidak dikarang). Urut paling kritis dulu.
+      tags: [commandcenter]
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - *ccLimit
+        - *ccCursor
+        - *ccLocationType
+        - *ccLocationId
+        - *ccProductId
+        - name: level
+          in: query
+          schema:
+            $ref: "#/components/schemas/CCRunoutLevel"
+      responses:
+        "200":
+          description: Satu halaman runout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CCRunoutResponse"
+        "401": *ccUnauthorized
+        "403": *ccForbidden
+        "422": *ccInvalid
+  /api/v1/cc/anomalies:
+    get:
+      operationId: listCommandCenterAnomalies
+      summary: Antrean anomali distribusi dan stok, terbaru dulu
+      description: >
+        Pemanggil ber-scope lokasi (SELECTED) hanya melihat anomali dengan subject_type
+        LOCATION di lokasinya; anomali distribusi (party/wilayah) hanya untuk scope ALL.
+      tags: [commandcenter]
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - *ccLimit
+        - *ccCursor
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/CCAnomalyStatus"
+        - name: severity
+          in: query
+          schema:
+            $ref: "#/components/schemas/CCSeverity"
+        - name: rule
+          in: query
+          description: Kode anomaly_rules, mis. OUT_OF_TERRITORY
+          schema: { type: string, pattern: "^[A-Z][A-Z0-9_]{0,63}$" }
+        - name: party_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Satu halaman anomali
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CCAnomalyPage"
+        "401": *ccUnauthorized
+        "403": *ccForbidden
+        "422": *ccInvalid
+  /api/v1/cc/anomalies/{id}:
+    patch:
+      operationId: updateCommandCenterAnomaly
+      summary: Tindak lanjut anomali (OPEN→ACK, OPEN/ACK→RESOLVED/FALSE_POSITIVE)
+      description: Perubahan bersyarat dan dicatat di audit_logs. note wajib untuk RESOLVED dan FALSE_POSITIVE.
+      tags: [commandcenter]
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CCAnomalyUpdateRequest"
+      responses:
+        "200":
+          description: Anomali setelah diubah
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CCAnomalyItem"
+        "400":
+          description: Body bukan JSON valid atau memuat field tak dikenal
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401": *ccUnauthorized
+        "403": *ccForbidden
+        "404":
+          description: Anomali tidak ada atau di luar scope (anomaly_not_found)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: Transisi tidak sah dari status sekarang (invalid_transition)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422": *ccInvalid
+  /api/v1/cc/conflicts:
+    get:
+      operationId: listCommandCenterConflicts
+      summary: Konflik alokasi (POS offline vs reservasi online), terbaru dulu
+      tags: [commandcenter]
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - *ccLimit
+        - *ccCursor
+        - name: status
+          in: query
+          schema: { type: string, enum: [OPEN, AUTO_RESOLVED, RESOLVED] }
+        - name: kind
+          in: query
+          schema: { type: string, enum: [OFFLINE_SALE_PREEMPT, SERIAL_DOUBLE_SALE, STOCK_DISCREPANCY] }
+        - *ccLocationId
+      responses:
+        "200":
+          description: Satu halaman konflik
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CCConflictPage"
+        "401": *ccUnauthorized
+        "403": *ccForbidden
+        "422": *ccInvalid
+  /api/v1/cc/distribution-leakage:
+    get:
+      operationId: listCommandCenterDistributionLeakage
+      summary: Indeks kebocoran wilayah per distributor (Kasus 1)
+      description: >
+        Scan unit (verifikasi konsumen, klaim, test-buy) dikaitkan ke custodian SAAT scan
+        (unit_events ber-party terakhir sebelum scan, fallback custodian sekarang), hanya
+        selama role DISTRIBUTOR party itu aktif, lalu dinilai terhadap wilayah resmi yang
+        berlaku saat scan (NATIONAL tidak pernah keluar wilayah). Scan yang wilayahnya lebih
+        kasar dari wilayah resmi (scan 35, territory 35.78) tidak dinilai (unjudged_scans).
+        Ambang sampel dan baseline dari anomaly_rules OUT_OF_TERRITORY. Rasio dibulatkan 4
+        desimal sekali; above_baseline memakai rasio yang ditampilkan. Alert bila rasio di
+        atas baseline dengan sampel cukup, atau ada hit TEST_BUY di luar wilayah.
+      tags: [commandcenter]
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - *ccLimit
+        - *ccCursor
+        - name: days
+          in: query
+          description: >
+            Jendela waktu dalam hari. Maksimal 90 karena indeks dihitung sinkron per request;
+            di produksi perhitungan dipindah ke worker/materialized view harian.
+          schema: { type: integer, minimum: 1, maximum: 90, default: 30 }
+        - name: party_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Satu halaman distributor, alert dan rasio tertinggi dulu
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CCLeakageResponse"
+        "401": *ccUnauthorized
+        "403": *ccForbidden
+        "422": *ccInvalid
   # ==== [/commandcenter] ====
 
 components:
@@ -73,6 +331,270 @@ components:
     # ==== [/pos] ====
 
     # ==== [commandcenter] ====
+    CCRunoutLevel:
+      type: string
+      enum: [CRITICAL, WARNING, INSUFFICIENT_DATA, OK]
+    CCAnomalyStatus:
+      type: string
+      enum: [OPEN, ACK, RESOLVED, FALSE_POSITIVE]
+    CCSeverity:
+      type: string
+      enum: [LOW, MEDIUM, HIGH, CRITICAL]
+    CCSummaryResponse:
+      type: object
+      required: [generated_at, runout, stock, anomalies, conflicts, stores]
+      properties:
+        generated_at: { type: string, format: date-time }
+        runout:
+          type: object
+          required: [window_days, critical_items, critical_locations, warning_items, warning_locations, insufficient_data_items, earliest_runout_date]
+          properties:
+            window_days: { type: integer }
+            critical_items: { type: integer, format: int64 }
+            critical_locations: { type: integer, format: int64 }
+            warning_items: { type: integer, format: int64 }
+            warning_locations: { type: integer, format: int64 }
+            insufficient_data_items: { type: integer, format: int64 }
+            earliest_runout_date:
+              type: [string, "null"]
+              format: date
+              description: Tanggal habis paling dekat di antara item CRITICAL/WARNING (zona lokasi)
+        stock:
+          type: object
+          required: [out_of_stock_items, out_of_stock_locations]
+          properties:
+            out_of_stock_items: { type: integer, format: int64, description: "SKU-lokasi milik sendiri dengan available 0" }
+            out_of_stock_locations: { type: integer, format: int64 }
+        anomalies:
+          type: object
+          required: [open_total, open_by_severity, top_party]
+          properties:
+            open_total: { type: integer, format: int64 }
+            open_by_severity:
+              type: object
+              required: [LOW, MEDIUM, HIGH, CRITICAL]
+              properties:
+                LOW: { type: integer, format: int64 }
+                MEDIUM: { type: integer, format: int64 }
+                HIGH: { type: integer, format: int64 }
+                CRITICAL: { type: integer, format: int64 }
+            top_party:
+              description: Party dengan anomali OPEN terbanyak
+              oneOf:
+                - $ref: "#/components/schemas/CCPartyCount"
+                - type: "null"
+        conflicts:
+          type: object
+          required: [open_total]
+          properties:
+            open_total: { type: integer, format: int64 }
+        stores:
+          type: object
+          required: [total, offline]
+          properties:
+            total: { type: integer, format: int64 }
+            offline: { type: integer, format: int64, description: "Toko dengan sync_state OFFLINE" }
+    CCPartyCount:
+      type: object
+      required: [party_id, party_name, open_count]
+      properties:
+        party_id: { type: string, format: uuid }
+        party_name: { type: string }
+        open_count: { type: integer, format: int64 }
+    CCStockItem:
+      type: object
+      required: [location_id, location_code, location_name, location_type, sync_state, last_heartbeat_at, product_id, sku, product_name,
+                 physical_qty, reserved_qty, quarantine_qty, available_qty, is_estimate, updated_at]
+      properties:
+        location_id: { type: string, format: uuid }
+        location_code: { type: string }
+        location_name: { type: string }
+        location_type: { type: string }
+        sync_state: { type: string, enum: [NOT_TRACKED, ONLINE, OFFLINE] }
+        last_heartbeat_at: { type: [string, "null"], format: date-time }
+        product_id: { type: string, format: uuid }
+        sku: { type: string }
+        product_name: { type: string }
+        physical_qty: { type: integer, format: int64 }
+        reserved_qty: { type: integer, format: int64 }
+        quarantine_qty: { type: integer, format: int64 }
+        available_qty: { type: integer, format: int64 }
+        is_estimate:
+          type: boolean
+          description: true untuk lokasi bukan milik sendiri; angkanya perkiraan dari sell-in tercatat
+        updated_at: { type: string, format: date-time }
+    CCStockPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CCStockItem" }
+        next_cursor: { type: [string, "null"] }
+    CCRunoutItem:
+      type: object
+      required: [location_id, location_code, location_name, location_type, product_id, sku, product_name, available_qty, is_estimate,
+                 sold_qty, history_days, avg_daily_sales, days_of_inventory, runout_date, level, reasons, has_policy, min_qty,
+                 lead_time_days, safety_days]
+      properties:
+        location_id: { type: string, format: uuid }
+        location_code: { type: string }
+        location_name: { type: string }
+        location_type: { type: string }
+        product_id: { type: string, format: uuid }
+        sku: { type: string }
+        product_name: { type: string }
+        available_qty: { type: integer, format: int64 }
+        is_estimate: { type: boolean }
+        sold_qty: { type: integer, format: int64, description: "Unit terjual dalam jendela 28 hari" }
+        history_days:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 28
+          description: Pembagi rata-rata = hari sejak mutasi pertama (lokasi, produk); null tanpa penjualan
+        avg_daily_sales: { type: [number, "null"], description: "null tanpa riwayat penjualan" }
+        days_of_inventory: { type: [number, "null"], description: "null tanpa riwayat penjualan" }
+        runout_date: { type: [string, "null"], format: date, description: "Hari ini (zona lokasi) + DOI; null kalau DOI null atau > 3650" }
+        level: { $ref: "#/components/schemas/CCRunoutLevel" }
+        reasons:
+          type: array
+          items:
+            type: string
+            enum: [STOCK_OUT, BELOW_LEAD_TIME, BELOW_SAFETY_DAYS, BELOW_MIN_QTY, NO_SALES_HISTORY, SHORT_HISTORY, NO_POLICY]
+        has_policy: { type: boolean, description: "false = tanpa stock_policies; hanya aturan stok habis yang berlaku" }
+        min_qty: { type: [integer, "null"], format: int64 }
+        lead_time_days: { type: [integer, "null"] }
+        safety_days: { type: [integer, "null"] }
+    CCRunoutResponse:
+      type: object
+      required: [items, next_cursor, window_days, generated_at]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CCRunoutItem" }
+        next_cursor: { type: [string, "null"] }
+        window_days: { type: integer }
+        generated_at: { type: string, format: date-time }
+    CCAnomalyItem:
+      type: object
+      required: [id, rule_code, rule_name, severity, status, subject_type, subject_id, party_id, party_name, region_code, region_name,
+                 hit_count, evidence, first_seen_at, last_seen_at, resolved_by, resolved_at, resolution_note, version, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        rule_code: { type: string }
+        rule_name: { type: string }
+        severity: { $ref: "#/components/schemas/CCSeverity" }
+        status: { $ref: "#/components/schemas/CCAnomalyStatus" }
+        subject_type: { type: string }
+        subject_id: { type: [string, "null"], format: uuid }
+        party_id: { type: [string, "null"], format: uuid }
+        party_name: { type: [string, "null"] }
+        region_code: { type: [string, "null"] }
+        region_name: { type: [string, "null"] }
+        hit_count: { type: integer }
+        evidence: { type: object, additionalProperties: true }
+        first_seen_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        resolved_by: { type: [string, "null"], format: uuid }
+        resolved_at: { type: [string, "null"], format: date-time }
+        resolution_note: { type: [string, "null"] }
+        version: { type: integer, format: int64 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CCAnomalyPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CCAnomalyItem" }
+        next_cursor: { type: [string, "null"] }
+    CCAnomalyUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [ACK, RESOLVED, FALSE_POSITIVE] }
+        note:
+          type: [string, "null"]
+          maxLength: 1000
+          description: >
+            Wajib untuk RESOLVED dan FALSE_POSITIVE (disimpan sebagai resolution_note dan di
+            audit). Pada ACK boleh diisi, tetapi hanya dicatat di audit_logs.reason, tidak
+            disimpan di anomali. Spasi di tepi dibuang. Karakter kontrol (NUL, ESC, CR, DEL, C1)
+            ditolak 422 invalid_characters; baris baru dan tab diizinkan.
+    CCConflictItem:
+      type: object
+      required: [id, kind, status, location_id, location_code, location_name, product_id, sku, product_name, qty, pos_transaction_id,
+                 reservation_id, order_id, serial_unit_id, resolution, details, resolved_by, resolved_at, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [OFFLINE_SALE_PREEMPT, SERIAL_DOUBLE_SALE, STOCK_DISCREPANCY] }
+        status: { type: string, enum: [OPEN, AUTO_RESOLVED, RESOLVED] }
+        location_id: { type: string, format: uuid }
+        location_code: { type: string }
+        location_name: { type: string }
+        product_id: { type: string, format: uuid }
+        sku: { type: string }
+        product_name: { type: string }
+        qty: { type: [integer, "null"], format: int64 }
+        pos_transaction_id: { type: [string, "null"], format: uuid }
+        reservation_id: { type: [string, "null"], format: uuid }
+        order_id: { type: [string, "null"], format: uuid }
+        serial_unit_id: { type: [string, "null"], format: uuid }
+        resolution: { type: [string, "null"] }
+        details: { type: object, additionalProperties: true }
+        resolved_by: { type: [string, "null"], format: uuid }
+        resolved_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+    CCConflictPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CCConflictItem" }
+        next_cursor: { type: [string, "null"] }
+    CCLeakageItem:
+      type: object
+      required: [party_id, party_name, coverage_mode, total_scans, located_scans, unlocated_scans, judged_scans, unjudged_scans,
+                 out_of_territory_scans, leak_ratio,
+                 sample_too_small, test_buy_scans, test_buy_hits, above_baseline, alert]
+      properties:
+        party_id: { type: string, format: uuid }
+        party_name: { type: string }
+        coverage_mode:
+          type: [string, "null"]
+          enum: [NATIONAL, SELECTED, null]
+          description: null = distributor belum punya wilayah resmi yang berlaku (rasio tidak dihitung)
+        total_scans: { type: integer, format: int64 }
+        located_scans: { type: integer, format: int64 }
+        unlocated_scans: { type: integer, format: int64 }
+        judged_scans: { type: integer, format: int64, description: "Scan yang bisa dinilai dalam/luar wilayah (dasar rasio)" }
+        unjudged_scans:
+          type: integer
+          format: int64
+          description: Scan berwilayah yang tidak bisa dinilai (wilayah scan lebih kasar dari wilayah resmi, atau tanpa wilayah resmi saat scan)
+        out_of_territory_scans: { type: [integer, "null"], format: int64 }
+        leak_ratio: { type: [number, "null"], description: "Luar wilayah ÷ scan yang dinilai, 4 desimal" }
+        sample_too_small: { type: boolean }
+        test_buy_scans: { type: integer, format: int64 }
+        test_buy_hits: { type: integer, format: int64, description: "Scan TEST_BUY di luar wilayah (sinyal kuat)" }
+        above_baseline: { type: boolean }
+        alert: { type: boolean }
+    CCLeakageResponse:
+      type: object
+      required: [items, next_cursor, window_days, from, to, min_scans, baseline_ratio]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CCLeakageItem" }
+        next_cursor: { type: [string, "null"] }
+        window_days: { type: integer }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        min_scans: { type: integer, format: int64 }
+        baseline_ratio: { type: number }
     # ==== [/commandcenter] ====
 
     LiveResponse:

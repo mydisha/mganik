@@ -38,10 +38,433 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cc/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fakta ringkas untuk kalimat ringkasan Command Center
+         * @description Hitungan runout dan stok habis hanya untuk lokasi milik sendiri; stok di lokasi mitra hanya estimasi dan tidak masuk ringkasan (tetap tampil di /cc/runout).
+         */
+        get: operations["getCommandCenterSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cc/stock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Saldo stok per lokasi dan produk (physical, reserved, quarantine, available)
+         * @description Stok di lokasi bukan milik sendiri (gudang mitra, marketplace) ditandai is_estimate.
+         */
+        get: operations["listCommandCenterStock"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cc/runout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Days of inventory dan perkiraan tanggal habis per lokasi dan produk
+         * @description DOI = available ÷ rata-rata penjualan harian (DIRECT_SALE + COMMIT_SALE dalam 28 hari terakhir ÷ history_days). history_days = hari sejak mutasi pertama (lokasi, produk), 1..28, sehingga SKU baru tidak dibagi 28 hari; riwayat < 7 hari diberi reason SHORT_HISTORY. DOI dibulatkan 2 desimal sekali dan nilai itu yang dipakai untuk level. CRITICAL bila DOI < lead_time_days atau stok habis padahal masih laku; WARNING bila DOI < lead_time_days + safety_days atau available < min_qty; INSUFFICIENT_DATA bila tanpa riwayat penjualan (DOI null, tidak dikarang). Urut paling kritis dulu.
+         */
+        get: operations["listCommandCenterRunout"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cc/anomalies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Antrean anomali distribusi dan stok, terbaru dulu
+         * @description Pemanggil ber-scope lokasi (SELECTED) hanya melihat anomali dengan subject_type LOCATION di lokasinya; anomali distribusi (party/wilayah) hanya untuk scope ALL.
+         */
+        get: operations["listCommandCenterAnomalies"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cc/anomalies/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Tindak lanjut anomali (OPEN→ACK, OPEN/ACK→RESOLVED/FALSE_POSITIVE)
+         * @description Perubahan bersyarat dan dicatat di audit_logs. note wajib untuk RESOLVED dan FALSE_POSITIVE.
+         */
+        patch: operations["updateCommandCenterAnomaly"];
+        trace?: never;
+    };
+    "/api/v1/cc/conflicts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Konflik alokasi (POS offline vs reservasi online), terbaru dulu */
+        get: operations["listCommandCenterConflicts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cc/distribution-leakage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Indeks kebocoran wilayah per distributor (Kasus 1)
+         * @description Scan unit (verifikasi konsumen, klaim, test-buy) dikaitkan ke custodian SAAT scan (unit_events ber-party terakhir sebelum scan, fallback custodian sekarang), hanya selama role DISTRIBUTOR party itu aktif, lalu dinilai terhadap wilayah resmi yang berlaku saat scan (NATIONAL tidak pernah keluar wilayah). Scan yang wilayahnya lebih kasar dari wilayah resmi (scan 35, territory 35.78) tidak dinilai (unjudged_scans). Ambang sampel dan baseline dari anomaly_rules OUT_OF_TERRITORY. Rasio dibulatkan 4 desimal sekali; above_baseline memakai rasio yang ditampilkan. Alert bila rasio di atas baseline dengan sampel cukup, atau ada hit TEST_BUY di luar wilayah.
+         */
+        get: operations["listCommandCenterDistributionLeakage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @enum {string} */
+        CCRunoutLevel: "CRITICAL" | "WARNING" | "INSUFFICIENT_DATA" | "OK";
+        /** @enum {string} */
+        CCAnomalyStatus: "OPEN" | "ACK" | "RESOLVED" | "FALSE_POSITIVE";
+        /** @enum {string} */
+        CCSeverity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+        CCSummaryResponse: {
+            /** Format: date-time */
+            generated_at: string;
+            runout: {
+                window_days: number;
+                /** Format: int64 */
+                critical_items: number;
+                /** Format: int64 */
+                critical_locations: number;
+                /** Format: int64 */
+                warning_items: number;
+                /** Format: int64 */
+                warning_locations: number;
+                /** Format: int64 */
+                insufficient_data_items: number;
+                /**
+                 * Format: date
+                 * @description Tanggal habis paling dekat di antara item CRITICAL/WARNING (zona lokasi)
+                 */
+                earliest_runout_date: string | null;
+            };
+            stock: {
+                /**
+                 * Format: int64
+                 * @description SKU-lokasi milik sendiri dengan available 0
+                 */
+                out_of_stock_items: number;
+                /** Format: int64 */
+                out_of_stock_locations: number;
+            };
+            anomalies: {
+                /** Format: int64 */
+                open_total: number;
+                open_by_severity: {
+                    /** Format: int64 */
+                    LOW: number;
+                    /** Format: int64 */
+                    MEDIUM: number;
+                    /** Format: int64 */
+                    HIGH: number;
+                    /** Format: int64 */
+                    CRITICAL: number;
+                };
+                /** @description Party dengan anomali OPEN terbanyak */
+                top_party: components["schemas"]["CCPartyCount"] | null;
+            };
+            conflicts: {
+                /** Format: int64 */
+                open_total: number;
+            };
+            stores: {
+                /** Format: int64 */
+                total: number;
+                /**
+                 * Format: int64
+                 * @description Toko dengan sync_state OFFLINE
+                 */
+                offline: number;
+            };
+        };
+        CCPartyCount: {
+            /** Format: uuid */
+            party_id: string;
+            party_name: string;
+            /** Format: int64 */
+            open_count: number;
+        };
+        CCStockItem: {
+            /** Format: uuid */
+            location_id: string;
+            location_code: string;
+            location_name: string;
+            location_type: string;
+            /** @enum {string} */
+            sync_state: "NOT_TRACKED" | "ONLINE" | "OFFLINE";
+            /** Format: date-time */
+            last_heartbeat_at: string | null;
+            /** Format: uuid */
+            product_id: string;
+            sku: string;
+            product_name: string;
+            /** Format: int64 */
+            physical_qty: number;
+            /** Format: int64 */
+            reserved_qty: number;
+            /** Format: int64 */
+            quarantine_qty: number;
+            /** Format: int64 */
+            available_qty: number;
+            /** @description true untuk lokasi bukan milik sendiri; angkanya perkiraan dari sell-in tercatat */
+            is_estimate: boolean;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CCStockPage: {
+            items: components["schemas"]["CCStockItem"][];
+            next_cursor: string | null;
+        };
+        CCRunoutItem: {
+            /** Format: uuid */
+            location_id: string;
+            location_code: string;
+            location_name: string;
+            location_type: string;
+            /** Format: uuid */
+            product_id: string;
+            sku: string;
+            product_name: string;
+            /** Format: int64 */
+            available_qty: number;
+            is_estimate: boolean;
+            /**
+             * Format: int64
+             * @description Unit terjual dalam jendela 28 hari
+             */
+            sold_qty: number;
+            /** @description Pembagi rata-rata = hari sejak mutasi pertama (lokasi, produk); null tanpa penjualan */
+            history_days: number | null;
+            /** @description null tanpa riwayat penjualan */
+            avg_daily_sales: number | null;
+            /** @description null tanpa riwayat penjualan */
+            days_of_inventory: number | null;
+            /**
+             * Format: date
+             * @description Hari ini (zona lokasi) + DOI; null kalau DOI null atau > 3650
+             */
+            runout_date: string | null;
+            level: components["schemas"]["CCRunoutLevel"];
+            reasons: ("STOCK_OUT" | "BELOW_LEAD_TIME" | "BELOW_SAFETY_DAYS" | "BELOW_MIN_QTY" | "NO_SALES_HISTORY" | "SHORT_HISTORY" | "NO_POLICY")[];
+            /** @description false = tanpa stock_policies; hanya aturan stok habis yang berlaku */
+            has_policy: boolean;
+            /** Format: int64 */
+            min_qty: number | null;
+            lead_time_days: number | null;
+            safety_days: number | null;
+        };
+        CCRunoutResponse: {
+            items: components["schemas"]["CCRunoutItem"][];
+            next_cursor: string | null;
+            window_days: number;
+            /** Format: date-time */
+            generated_at: string;
+        };
+        CCAnomalyItem: {
+            /** Format: uuid */
+            id: string;
+            rule_code: string;
+            rule_name: string;
+            severity: components["schemas"]["CCSeverity"];
+            status: components["schemas"]["CCAnomalyStatus"];
+            subject_type: string;
+            /** Format: uuid */
+            subject_id: string | null;
+            /** Format: uuid */
+            party_id: string | null;
+            party_name: string | null;
+            region_code: string | null;
+            region_name: string | null;
+            hit_count: number;
+            evidence: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            first_seen_at: string;
+            /** Format: date-time */
+            last_seen_at: string;
+            /** Format: uuid */
+            resolved_by: string | null;
+            /** Format: date-time */
+            resolved_at: string | null;
+            resolution_note: string | null;
+            /** Format: int64 */
+            version: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CCAnomalyPage: {
+            items: components["schemas"]["CCAnomalyItem"][];
+            next_cursor: string | null;
+        };
+        CCAnomalyUpdateRequest: {
+            /** @enum {string} */
+            status: "ACK" | "RESOLVED" | "FALSE_POSITIVE";
+            /** @description Wajib untuk RESOLVED dan FALSE_POSITIVE (disimpan sebagai resolution_note dan di audit). Pada ACK boleh diisi, tetapi hanya dicatat di audit_logs.reason, tidak disimpan di anomali. Spasi di tepi dibuang. Karakter kontrol (NUL, ESC, CR, DEL, C1) ditolak 422 invalid_characters; baris baru dan tab diizinkan. */
+            note?: string | null;
+        };
+        CCConflictItem: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "OFFLINE_SALE_PREEMPT" | "SERIAL_DOUBLE_SALE" | "STOCK_DISCREPANCY";
+            /** @enum {string} */
+            status: "OPEN" | "AUTO_RESOLVED" | "RESOLVED";
+            /** Format: uuid */
+            location_id: string;
+            location_code: string;
+            location_name: string;
+            /** Format: uuid */
+            product_id: string;
+            sku: string;
+            product_name: string;
+            /** Format: int64 */
+            qty: number | null;
+            /** Format: uuid */
+            pos_transaction_id: string | null;
+            /** Format: uuid */
+            reservation_id: string | null;
+            /** Format: uuid */
+            order_id: string | null;
+            /** Format: uuid */
+            serial_unit_id: string | null;
+            resolution: string | null;
+            details: {
+                [key: string]: unknown;
+            };
+            /** Format: uuid */
+            resolved_by: string | null;
+            /** Format: date-time */
+            resolved_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        CCConflictPage: {
+            items: components["schemas"]["CCConflictItem"][];
+            next_cursor: string | null;
+        };
+        CCLeakageItem: {
+            /** Format: uuid */
+            party_id: string;
+            party_name: string;
+            /**
+             * @description null = distributor belum punya wilayah resmi yang berlaku (rasio tidak dihitung)
+             * @enum {string|null}
+             */
+            coverage_mode: "NATIONAL" | "SELECTED" | null;
+            /** Format: int64 */
+            total_scans: number;
+            /** Format: int64 */
+            located_scans: number;
+            /** Format: int64 */
+            unlocated_scans: number;
+            /**
+             * Format: int64
+             * @description Scan yang bisa dinilai dalam/luar wilayah (dasar rasio)
+             */
+            judged_scans: number;
+            /**
+             * Format: int64
+             * @description Scan berwilayah yang tidak bisa dinilai (wilayah scan lebih kasar dari wilayah resmi, atau tanpa wilayah resmi saat scan)
+             */
+            unjudged_scans: number;
+            /** Format: int64 */
+            out_of_territory_scans: number | null;
+            /** @description Luar wilayah ÷ scan yang dinilai, 4 desimal */
+            leak_ratio: number | null;
+            sample_too_small: boolean;
+            /** Format: int64 */
+            test_buy_scans: number;
+            /**
+             * Format: int64
+             * @description Scan TEST_BUY di luar wilayah (sinyal kuat)
+             */
+            test_buy_hits: number;
+            above_baseline: boolean;
+            alert: boolean;
+        };
+        CCLeakageResponse: {
+            items: components["schemas"]["CCLeakageItem"][];
+            next_cursor: string | null;
+            window_days: number;
+            /** Format: date-time */
+            from: string;
+            /** Format: date-time */
+            to: string;
+            /** Format: int64 */
+            min_scans: number;
+            baseline_ratio: number;
+        };
         LiveResponse: {
             /** @constant */
             status: "ok";
@@ -120,6 +543,399 @@ export interface operations {
             };
             /** @description Belum siap */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getCommandCenterSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Angka terstruktur; UI yang menyusun kalimat */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CCSummaryResponse"];
+                };
+            };
+            /** @description Belum masuk */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Tanpa permission, atau filter lokasi di luar scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listCommandCenterStock: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description next_cursor dari halaman sebelumnya (opaque) */
+                cursor?: string;
+                /** @description Kode location_types, mis. CENTRAL_WH, HUB, OWN_STORE, PARTNER_WH */
+                location_type?: string;
+                location_id?: string;
+                product_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Satu halaman saldo, urut kode lokasi lalu SKU */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CCStockPage"];
+                };
+            };
+            /** @description Belum masuk */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Tanpa permission, atau filter lokasi di luar scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Query param tidak valid (limit, cursor, filter) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listCommandCenterRunout: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description next_cursor dari halaman sebelumnya (opaque) */
+                cursor?: string;
+                /** @description Kode location_types, mis. CENTRAL_WH, HUB, OWN_STORE, PARTNER_WH */
+                location_type?: string;
+                location_id?: string;
+                product_id?: string;
+                level?: components["schemas"]["CCRunoutLevel"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Satu halaman runout */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CCRunoutResponse"];
+                };
+            };
+            /** @description Belum masuk */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Tanpa permission, atau filter lokasi di luar scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Query param tidak valid (limit, cursor, filter) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listCommandCenterAnomalies: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description next_cursor dari halaman sebelumnya (opaque) */
+                cursor?: string;
+                status?: components["schemas"]["CCAnomalyStatus"];
+                severity?: components["schemas"]["CCSeverity"];
+                /** @description Kode anomaly_rules, mis. OUT_OF_TERRITORY */
+                rule?: string;
+                party_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Satu halaman anomali */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CCAnomalyPage"];
+                };
+            };
+            /** @description Belum masuk */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Tanpa permission, atau filter lokasi di luar scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Query param tidak valid (limit, cursor, filter) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateCommandCenterAnomaly: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CCAnomalyUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Anomali setelah diubah */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CCAnomalyItem"];
+                };
+            };
+            /** @description Body bukan JSON valid atau memuat field tak dikenal */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Belum masuk */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Tanpa permission, atau filter lokasi di luar scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Anomali tidak ada atau di luar scope (anomaly_not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Transisi tidak sah dari status sekarang (invalid_transition) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Query param tidak valid (limit, cursor, filter) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listCommandCenterConflicts: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description next_cursor dari halaman sebelumnya (opaque) */
+                cursor?: string;
+                status?: "OPEN" | "AUTO_RESOLVED" | "RESOLVED";
+                kind?: "OFFLINE_SALE_PREEMPT" | "SERIAL_DOUBLE_SALE" | "STOCK_DISCREPANCY";
+                location_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Satu halaman konflik */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CCConflictPage"];
+                };
+            };
+            /** @description Belum masuk */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Tanpa permission, atau filter lokasi di luar scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Query param tidak valid (limit, cursor, filter) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listCommandCenterDistributionLeakage: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description next_cursor dari halaman sebelumnya (opaque) */
+                cursor?: string;
+                /** @description Jendela waktu dalam hari. Maksimal 90 karena indeks dihitung sinkron per request; di produksi perhitungan dipindah ke worker/materialized view harian. */
+                days?: number;
+                party_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Satu halaman distributor, alert dan rasio tertinggi dulu */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CCLeakageResponse"];
+                };
+            };
+            /** @description Belum masuk */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Tanpa permission, atau filter lokasi di luar scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Query param tidak valid (limit, cursor, filter) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

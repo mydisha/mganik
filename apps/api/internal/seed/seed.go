@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"mganik/api/internal/clock"
 	"mganik/api/internal/domain"
 	"mganik/api/internal/model"
 )
@@ -29,6 +30,9 @@ type Options struct {
 	// PasswordParams default domain.OWASPArgon2id kalau kosong.
 	PasswordParams domain.Argon2Params
 	Log            *slog.Logger
+	// Clock menentukan "hari ini" untuk riwayat penjualan demo (default jam
+	// sistem). Test memakai clock.Fake.
+	Clock clock.Clock
 }
 
 // Result merangkum jumlah baris baru per tabel (0 semua saat seed diulang).
@@ -66,13 +70,16 @@ func Run(ctx context.Context, db *gorm.DB, opts Options) (Result, error) {
 	if opts.Log == nil {
 		opts.Log = slog.Default()
 	}
+	if opts.Clock == nil {
+		opts.Clock = clock.Real{}
+	}
 
 	s := &seeder{opts: opts, res: Result{Inserted: map[string]int64{}}}
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		s.tx = tx
 		steps := []func() error{
 			s.regions, s.catalog, s.parties, s.locations, s.territories,
-			s.priceLists, s.users, s.serials, s.inventory, s.posDevice,
+			s.priceLists, s.users, s.serials, s.inventory, s.salesHistory, s.posDevice,
 		}
 		for _, step := range steps {
 			if err := step(); err != nil {

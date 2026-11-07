@@ -187,8 +187,13 @@ func TestSeed_LedgerMatchesBalances(t *testing.T) {
 	if n := count(t, db, `SELECT count(*) FROM inventory_balances WHERE physical_qty > 0`); n < 6 {
 		t.Fatalf("hanya %d saldo terisi", n)
 	}
-	if n := count(t, db, `SELECT count(*) FROM inventory_movements WHERE movement_type <> 'RECEIPT'`); n != 0 {
-		t.Fatalf("saldo awal harus dari RECEIPT, ada %d mutasi lain", n)
+	// Ledger seed hanya berisi RECEIPT (saldo awal + stok masuk sebelum
+	// riwayat penjualan) dan DIRECT_SALE riwayat penjualan demo untuk DOI/runout
+	// Command Center; tidak ada tipe mutasi lain.
+	if n := count(t, db, `SELECT count(*) FROM inventory_movements
+	                       WHERE movement_type <> 'RECEIPT'
+	                         AND NOT (movement_type = 'DIRECT_SALE' AND ref_type = 'SEED_SALES_HISTORY')`); n != 0 {
+		t.Fatalf("seed hanya boleh menulis RECEIPT dan riwayat DIRECT_SALE demo, ada %d mutasi lain", n)
 	}
 	// Saldo serial di gudang pusat = jumlah unit serial IN_STOCK di sana.
 	units := count(t, db, `SELECT count(*) FROM serial_units WHERE level_code = 'UNIT' AND status = 'IN_STOCK' AND location_id = ?`, seed.LocationID(seed.CentralWHCode))
