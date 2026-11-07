@@ -552,7 +552,7 @@ charged for an item that cannot be shipped, and receives clear compensation.
 | Online buffer + heartbeat → OFFLINE | Built | `TestOrder_OnlineATPForStores`, `TestPosHeartbeat_MarkOfflineThreshold`, `TestPosHeartbeat_TwoJobInstances` |
 | Signatures, sequence squatting, flags, limits | Built | `TestPosSync_InvalidSignature`, `TestQA_SeqSquatting`, `TestPosSync_FlagsAndValidation`, `TestPosSync_BatchLimits`, `TestPosSync_SeqGapAndOrdering` |
 | Conflict resolution by ops | Built | `TestConflictResolve` |
-| In-browser offline POS app (IndexedDB outbox, cashier screen) | Design: the `/pos` page is still a placeholder | — |
+| In-browser offline POS app (IndexedDB outbox, cashier screen) | Built (`/pos` PWA) | `apps/web/src/features/pos/**/*.test.ts(x)` (canonical JSON vectors shared with Go, two-tab `device_seq`, sync engine statuses) |
 | Issuing vouchers and executing refunds at the gateway | Design: the system records the resolution options and the refund request (metadata + event) but does not execute them | — |
 
 ---
@@ -590,8 +590,9 @@ ran out), false-positive rate per anomaly rule, time from anomaly creation to `A
 
 **Status:** every endpoint above is built and tested (`TestRunout_LevelsDOIAndOrder`,
 `TestRunout_ShortHistoryAndRounding`, `TestStock_VisibilityFiltersAndKeyset`, `TestSummary_Facts`,
-`TestAnomaly_Transitions`, `TestScope_SelectedSeesOnlyOwnLocations`). The console screens are still
-placeholders. Because shipments do not move stock balances yet (ARCHITECTURE §9, I4), partner
+`TestAnomaly_Transitions`, `TestScope_SelectedSeesOnlyOwnLocations`). The console screens (`/console`)
+show the summary as sentences first, then runout, stock, anomalies, conflicts and distribution
+leakage. Because shipments do not move stock balances yet (ARCHITECTURE §9, I4), partner
 warehouse stock is not filled from shipments.
 
 ---

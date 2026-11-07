@@ -17,8 +17,9 @@ offline-first POS, and a Supply Chain Command Center.
 | 4b. Hologram status lifecycle test | `internal/serialtest/lifecycle_test.go` | `TestSerialTransitions_Table` (every status pair), `TestSerial_ConcurrentSell` |
 | 4c. Offline sync idempotency test | `internal/postest/sync_idempotency_test.go` | `TestPosSync_DuplicateBatch`, `TestPosSync_ConcurrentDuplicate`, `TestPosSync_SameIdDifferentPayload` |
 
-Code paths are relative to `apps/api/internal/`. The frontend (`/pos`, `/console`, `/v/<code>`)
-is still a skeleton; all three flows are proven through the API and the tests. The full list of
+Code paths are relative to `apps/api/internal/`. The frontend covers all three surfaces: the
+offline-first cashier PWA (`/pos`), the staff Command Center (`/console`) and consumer verification
+with points claim (`/v/<code>`), with Vitest suites under `apps/web/src/features/*`. The full list of
 what is not built yet is in [ARCHITECTURE.md §9](ARCHITECTURE.md#9-prototype-limitations).
 
 ### Running the three required tests
@@ -63,8 +64,9 @@ That one command starts the whole stack in order:
 | `api` | Go backend (Gin) | http://localhost:8089 |
 | `web` | React build served by nginx, proxying `/api` to `api` | http://localhost:8088 |
 
-Pages: `/console` (Command Center), `/pos` (cashier), `/v/<code>` (consumer verification); they are
-still a skeleton for now.
+Pages: `/login` and `/console` (staff Command Center), `/pos` (offline-first cashier PWA; set the
+device up at `/pos/setup` with the demo device token and signing key from `make demo-data`),
+`/v/<code>` (consumer verification and points claim).
 Ports can be changed in `.env` (copy it from `.env.example`). `make up` does the same in the
 background; `make down` stops it, and `make clean` also deletes the database data.
 

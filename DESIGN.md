@@ -71,6 +71,16 @@ at least 3:1. Recheck contrast every time a token changes.
 | `StatusBadge` | Every status. Always text; color only reinforces it |
 | `PageHeader` | The `h1`, one sentence of context, page actions |
 | `EmptyState` | No data yet: what will appear here and the next step |
+| `Input`, `Select` (native), `FormField` | Visible label + hint + error wired with `aria-describedby`; 16 px text and 44 px height on touch. Server field errors (422 `errors[]`) go on their field, other failures in an `Alert` above the form |
+| `Alert` | Inline messages (danger uses `role="alert"`) |
+| `ErrorState` / `ForbiddenState` | Failed load with the server `detail` and "Coba lagi"; a 403 renders in place of the content, never a redirect |
+| `Skeleton`, `Spinner` | Shaped like the content; animate only under `motion-safe` |
+| `DataTable` | Dense table from 768 px, cards below (one rendered, chosen by `matchMedia`); keyset lists append with "Muat lebih banyak" |
+| `FilterChip` | Filters live in the URL; values without a list endpoint are applied from row links and shown as removable chips |
+| `SidePanel` | Record detail or longer forms from the right (full width on phones); also the mobile nav sheet below 1024 px |
+| `Dialog`, `ConfirmDialog` | Short tasks; destructive actions that break something live require typing the exact name (revoking a POS device) |
+| `SecretRevealDialog` | Secrets shown once (device token + signing key) with copy buttons; cannot close until "saved" is checked |
+| Toast (sonner) | Outcome of an action the user just took; never for load errors |
 
 ## Command Center
 
@@ -86,6 +96,12 @@ at least 3:1. Recheck contrast every time a token changes.
 - Keyboard shortcuts are shown on their buttons (F2 pay, F4 delete line, Esc cancel).
 - Scan feedback: distinct short sounds for success and failure, plus a row highlight.
 - Target screens: 1024 × 768 landscape and 1366 × 768.
+- Layout: two columns from 1024 px (cart left; total, numpad, Pay on the right); below that the columns stack.
+- Touch sizes come from a POS wrapper over `Button`: 48 px default, 56 px secondary, 64 px primary and numpad keys. Numpad keys never take focus, so the scan field keeps receiving scanner input.
+- A burst with gaps under 30 ms ending in Enter counts as a scanner; manual typing opens product search. A hologram QR (`/v/<code>`) attaches its serial to the line; a serial unknown on the device is held and attached to the next product.
+- Destructive actions (remove line, cancel sale, remove device) use a confirm dialog with Cancel focused first.
+- "Perlu perhatian" (needs attention) turns destructive only when something needs action: rejected transactions, missing sequence numbers, revoked or blocked sync.
+- After a sale the on-screen receipt shows change first, then lines, payments and the live sync status of that transaction. Money uses `tabular-nums`; the total is the largest number on the sell screen.
 
 ## Consumer verification
 

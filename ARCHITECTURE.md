@@ -48,9 +48,9 @@ pillars together:
 
 **Prototype status.** The Go backend runs all three required flows (serial verification with
 anti-fraud logic, stock allocation with concurrency protection, offline POS transaction sync)
-plus the Command Center read model, all tested against a real PostgreSQL. The React frontend is
-a skeleton: `/pos`, `/console`, and `/v/:code` are placeholders, so demos run through the API and
-the test suite (see [§9](#9-prototype-limitations)).
+plus the Command Center read model, all tested against a real PostgreSQL. The React frontend
+covers the offline-first cashier PWA (`/pos`), the staff console (`/console`) and consumer
+verification (`/v/:code`); remaining gaps are in [§9](#9-prototype-limitations).
 
 **Design principles**
 
@@ -86,7 +86,7 @@ flowchart LR
     EXT["Payment gateway & marketplace<br/>mock webhooks, HMAC"]
   end
 
-  WEB["web: nginx<br/>React SPA (skeleton) + /api proxy"]
+  WEB["web: nginx<br/>React SPA + POS PWA + /api proxy"]
 
   subgraph APP["api: Go monolith"]
     MW["middleware<br/>request id, auth resolver, body limit, security headers"]
@@ -869,11 +869,18 @@ is small and local.
 
 ### 9.2 Frontend
 
-`/pos`, `/console`, and `/v/:code` are still placeholders (a heading and an empty state). Dexie and
-`vite-plugin-pwa` are in the dependencies, but the offline sync engine, the cashier screen, the
-verification page, and the console are not built. Every flow is proven through the API and the Go
-tests; the offline POS design (IndexedDB outbox, monotonic `device_seq`, Web Locks for a single sync
-runner) is in `PRODUCT_DEFENSE.md`.
+The cashier PWA (Dexie outbox, monotonic `device_seq` in one IndexedDB transaction, HMAC signing
+with a non-extractable WebCrypto key, Web Locks single sync runner, local argon2id PIN check), the
+staff console and the consumer verification page are built and covered by Vitest. Known gaps:
+
+- No in-app recovery when a device was set up with a wrong signing key: sales come back
+  `invalid_signature` (not stored) and the store cannot reach ONLINE until the device is wiped.
+- Bootstrap does not return the highest stored `device_seq`, so re-provisioning the same token on
+  a second browser can hit `device_seq_reused`.
+- The API has no location, product or anomaly-rule list endpoints; console filters are applied from
+  row links, and the store picker for new devices is derived from stock balances.
+- The points-claim response does not say whether a PENDING claim is waiting for review.
+- The cashier sync stops when every `/pos` tab is closed (no Background Sync).
 
 ### 9.3 Other
 
