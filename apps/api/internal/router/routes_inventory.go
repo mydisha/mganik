@@ -40,6 +40,8 @@ func MountInventory(api *gin.RouterGroup, d Deps) {
 	invSvc := service.NewInventoryService(d.DB, clk)
 	idem := service.NewIdempotencyService(d.DB, clk)
 	orders := service.NewOrderService(d.DB, clk, invSvc, idem, d.Config.Inventory.ReservationTTL)
+	// Fulfillment menandai serial unit SOLD di transaksi yang sama (I2).
+	orders.SetSerialSaleHook(service.NewOrderSerialSale(service.NewSerialService(d.DB, clk, d.Config.ClaimPepper)))
 
 	invCtl := controller.NewInventoryController(invSvc, d.Log)
 	orderCtl := controller.NewOrderController(orders, d.Log)

@@ -107,3 +107,84 @@ func TestFulfill_WithSerialsOnSeedData(t *testing.T) {
 	// Data demo tetap konsisten dengan engine: ledger = saldo.
 	(&inventorytest.Fixture{T: t, DB: db}).AssertInvariants()
 }
+
+// I2: dengan hook serialisasi sungguhan (wiring router), fulfill memindahkan
+// serial ke SOLD di transaksi yang sama; serial yang tidak ada di lokasi
+// pemenuhan menggagalkan seluruh fulfill (order tetap PAID, stok tidak
+// berkurang, serial tidak tercatat).
+func TestFulfill_MarksSerialsSold(t *testing.T) {
+	db := testutil.NewDB(t)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if _, err := seed.Run(context.Background(), db, seed.Options{
+		Enabled: true, Pepper: []byte("pepper-test"), DemoPassword: "password-demo-test",
+		PasswordParams: domain.Argon2Params{MemoryKiB: 64, Iterations: 1, Parallelism: 1, SaltLen: 16, KeyLen: 32}, Log: log,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	clk := clock.NewFake(inventorytest.Start)
+	inv := service.NewInventoryService(db, clk)
+	orders := service.NewOrderService(db, clk, inv, service.NewIdempotencyService(db, clk), 0)
+	orders.SetSerialSaleHook(service.NewOrderSerialSale(service.NewSerialService(db, clk, []byte("pepper-test"))))
+	payments := service.NewPaymentService(orders)
+	ops := inventorytest.Staff(inventorytest.AllInventoryPerms...)
+	ctx := context.Background()
+
+	place := func(qty int64) service.OrderView {
+		t.Helper()
+		var v service.OrderView
+		_, err := orders.CreateIdempotent(ctx, ops, uuid.NewString(), service.CreateOrderInput{
+			Lines: []service.CreateOrderLine{{ProductID: seed.ProductID(seed.SKU1), Qty: qty}},
+		}, func(ov service.OrderView) any { v = ov; return map[string]string{} })
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := payments.HandleMockWebhook(ctx, service.PaymentWebhookInput{
+			ProviderRef: uuid.NewString(), OrderID: v.Order.ID, Amount: v.Order.Total, Currency: "IDR", Status: "SUCCEEDED",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	status := func(id uuid.UUID) string {
+		t.Helper()
+		var s string
+		if err := db.Raw("SELECT status FROM serial_units WHERE id = ?", id).Scan(&s).Error; err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+
+	// Serial di lokasi lain (unit lepas di toko, order dipenuhi dari gudang):
+	// seluruh fulfill batal.
+	storeUnit := seed.DemoSerialID("UNIT", seed.DemoStoreUnitIndex)
+	o := place(1)
+	if _, err := orders.Fulfill(ctx, ops, o.Order.ID, []service.LineSerials{{OrderLineID: o.Lines[0].ID, SerialIDs: []uuid.UUID{storeUnit}}}); err == nil {
+		t.Fatal("serial di lokasi lain harus menggagalkan fulfill")
+	}
+	var after service.OrderView
+	after, err := orders.Get(ctx, ops, o.Order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Order.Status != "PAID" || len(after.Serials) != 0 || status(storeUnit) != domain.SerialInStock {
+		t.Fatalf("rollback tidak utuh: status %s serial %d unit %s", after.Order.Status, len(after.Serials), status(storeUnit))
+	}
+
+	// Serial di lokasi pemenuhan: SOLD, dengan event penjualan ber-ref ORDER.
+	u0, u1 := seed.DemoSerialID("UNIT", 0), seed.DemoSerialID("UNIT", 1)
+	two := place(2)
+	if _, err := orders.Fulfill(ctx, ops, two.Order.ID, []service.LineSerials{{OrderLineID: two.Lines[0].ID, SerialIDs: []uuid.UUID{u0, u1}}}); err != nil {
+		t.Fatal(err)
+	}
+	if status(u0) != domain.SerialSold || status(u1) != domain.SerialSold {
+		t.Fatalf("serial belum SOLD: %s %s", status(u0), status(u1))
+	}
+	var events int64
+	if err := db.Raw("SELECT count(*) FROM unit_events WHERE serial_unit_id IN (?, ?) AND ref_type = 'ORDER' AND ref_id = ?", u0, u1, two.Order.ID).Scan(&events).Error; err != nil {
+		t.Fatal(err)
+	}
+	if events < 2 {
+		t.Fatalf("event penjualan ber-ref ORDER: %d", events)
+	}
+	(&inventorytest.Fixture{T: t, DB: db}).AssertInvariants()
+}

@@ -325,7 +325,7 @@ to get wrong.
 | Risk score + review | Built | `TestClaim_RiskScoreClampedAndReview`, `TestHTTP_ClaimAndReviewFlow` |
 | Rejection, real buyer, clawback | Built | `TestClaim_RejectedThenGenuineBuyerClaims`, `TestClaim_QARepro_ReclaimAfterRejectBlocked`, `TestClaim_ReverseApprovedClaim`, `TestClaim_RejectRestoresStatusSoRecallCatchesIt`, `TestClaim_ConcurrentReviewDecisions` |
 | Automatic point release after the holding period | The function is built and tested (`TestReleaseDueClaims_ConcurrentInstances`) but not scheduled by the worker (ARCHITECTURE §9, I3) | — |
-| Units sold through D2C orders can be claimed | Not yet: fulfillment does not move the serial to `SOLD` (ARCHITECTURE §9, I2). Units sold through the POS already can | — |
+| Units sold through D2C orders can be claimed | Built: fulfillment moves the serial to `SOLD` in the same transaction as the stock commit, like the POS | `TestFulfill_MarksSerialsSold` |
 | SMS OTP sender, CS endpoint | Design | — |
 
 ---
@@ -617,15 +617,12 @@ One headline metric per area, so the system's success is not measured by its fea
 Work after the prototype, ordered by the size of the risk it closes:
 
 1. **Integration between modules** (ARCHITECTURE §9): per-permission scope checks in every module
-   (I1), fulfillment moves serials to `SOLD` (I2), shipments and recalls move stock balances (I4),
-   the point release and session cleanup jobs (I3), `LEDGER_DRIFT` reconciliation (I5).
-2. **The offline POS app** (Dexie outbox + sync engine + cashier screen) and **the consumer
-   verification page** at 360 px width.
-3. **The Command Center console**: summary sentence, runout, anomaly and conflict queues, serial
-   trace.
-4. **A test-buy endpoint** and IP geolocation for scans without GPS.
-5. **Case 3**: campaign links, touchpoints, offline conversions to ad platforms, geo-lift.
-6. **A distributor portal** with outbound scans.
+   (I1), shipments and recalls move stock balances (I4), the point release and session cleanup
+   jobs (I3), `LEDGER_DRIFT` reconciliation (I5).
+2. **POS hardening**: in-app signing-key recovery, `max_stored_seq` in bootstrap, background sync.
+3. **A test-buy endpoint** and IP geolocation for scans without GPS.
+4. **Case 3**: campaign links, touchpoints, offline conversions to ad platforms, geo-lift.
+5. **A distributor portal** with outbound scans.
 
 ---
 
